@@ -1,0 +1,61 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "docker: setup env",
+      "type": "shell",
+      "command": "./docker/setup-env.sh",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "docker: build",
+      "type": "shell",
+      "command": "docker compose -f docker/docker-compose.yaml --env-file docker/.env build",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "dependsOn": "docker: setup env",
+      "problemMatcher": []
+    },
+    {
+      "label": "assets: fetch ur5e",
+      "type": "shell",
+      "command": "./scripts/fetch_ur5e_menagerie_assets.sh",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "docker: up",
+      "type": "shell",
+      "command": "docker compose -f docker/docker-compose.yaml --env-file docker/.env up -d --wait",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "dependsOn": "docker: build",
+      "problemMatcher": []
+    },
+    {
+      "label": "docker: shell",
+      "type": "shell",
+      "command": "docker compose -f docker/docker-compose.yaml --env-file docker/.env exec dev zsh",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "docker: down",
+      "type": "shell",
+      "command": "docker compose -f docker/docker-compose.yaml --env-file docker/.env down",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

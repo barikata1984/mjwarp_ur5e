@@ -9,6 +9,9 @@
 debugpy
 ipdb
 rich
+jupyterlab
+wheel
+tyro
 
 # --- Code quality ---
 ruff
@@ -16,3 +19,16 @@ ruff
 # --- Testing ---
 pytest>=7.0
 pytest-xdist
+
+# --- Scientific computing ---
+numpy
+scipy
+matplotlib
+
+# --- Simulation / robotics ---
+mujoco>=3.2
+warp-lang
+trimesh
+yourdfpy
+imageio
+imageio-ffmpeg

@@ -4,6 +4,9 @@ __pycache__/
 dist/
 build/
 .venv/
+.pytest_cache/
+.ruff_cache/
+debug/
 *.pt
 *.ckpt
 wandb/
@@ -11,6 +14,14 @@ runs/
 outputs/
 logs/
 .DS_Store
+assets/ur5e/*
+!assets/ur5e/.gitkeep
+!assets/ur5e/README.md
+!assets/ur5e/mjcf/
+assets/ur5e/mjcf/*
+!assets/ur5e/mjcf/.gitkeep
+!assets/ur5e/mjcf/scene_with_box.xml
+!assets/ur5e/mjcf/ur5e_with_box.xml
 
 # Docker — machine-specific files (use .env.example as template)
 docker/.env

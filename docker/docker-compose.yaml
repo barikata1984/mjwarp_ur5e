@@ -2,38 +2,39 @@
 # Development Container — Docker Compose (Base Template)
 # =============================================================================
 # Usage (standalone):
-#   cd docker
-#   cp .env.example .env            # edit for your machine
-#   docker compose build
-#   docker compose up -d
-#   docker compose exec dev zsh
+#   ./docker/setup-env.sh
+#   docker compose -f docker/docker-compose.yaml --env-file docker/.env build
+#   docker compose -f docker/docker-compose.yaml --env-file docker/.env up -d
+#   docker compose -f docker/docker-compose.yaml --env-file docker/.env exec dev zsh
 #
 # Usage (devcontainer):
 #   Open in VS Code -> "Reopen in Container"
 # =============================================================================
 
-name: my-project  # TODO: rename to your project name
+name: mjwarp-ur5e
 
 services:
   # ---------------------------------------------------------------------------
   # Main development container
   # ---------------------------------------------------------------------------
-  dev:  # TODO: rename to your service name
+  dev:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/Dockerfile
       args:
         CUDA_VERSION: ${CUDA_VERSION:-12.8.0}
         HOST_UID: ${HOST_UID:-1000}
         HOST_GID: ${HOST_GID:-1000}
         HOST_USER: ${USER:-developer}
-    image: my-project:latest  # TODO: rename to your image name
+    image: mjwarp-ur5e:latest
 
     environment:
-      - HOST_USER=${USER:-developer}
-      - DISPLAY=${DISPLAY:-:1}
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=all
+      HOST_USER: ${USER:-developer}
+      DISPLAY: ${DISPLAY:-:0}
+      MUJOCO_GL: ${MUJOCO_GL:-egl}
+      PYOPENGL_PLATFORM: ${PYOPENGL_PLATFORM:-egl}
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-all}
 
     volumes:
       # Project workspace (host project dir -> container /workspace)
@@ -47,11 +48,15 @@ services:
       # X11 / GUI forwarding
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
 
-      # Pip cache (persist across rebuilds)
+      # Persistent caches (survive rebuilds)
       - pip-cache:/home/${USER:-developer}/.cache/pip
+      - mujoco-cache:/home/${USER:-developer}/.cache/mujoco
+      - warp-cache:/home/${USER:-developer}/.cache/warp
 
     # Shared memory for PyTorch DataLoader workers, NCCL, etc.
     ipc: host
+    shm_size: ${SHM_SIZE:-8gb}
+    init: true
 
     # GPU support (NVIDIA)
     deploy:
@@ -65,8 +70,16 @@ services:
     stdin_open: true
     tty: true
     working_dir: /workspace
+    healthcheck:
+      test: ["CMD", "python", "-c", "import mjwarp_ur5e, mujoco, warp"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
     command: ["sleep", "infinity"]
 
 volumes:
   pip-cache:
+  mujoco-cache:
+  warp-cache:

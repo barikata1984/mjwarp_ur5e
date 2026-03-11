@@ -1,112 +1,184 @@
-# Devcontainer Base Template
+# mjwarp_ur5e
 
-NVIDIA CUDA + Ubuntu 24.04 ベースの VS Code devcontainer テンプレート。
-GPU 開発環境を新規プロジェクトごとに素早く立ち上げるためのベース設定。
+MuJoCo と NVIDIA Warp 上で UR5e を扱い、ロボット工学アルゴリズムを反復検証するための開発環境です。
+VS Code の devcontainer を標準導線にしつつ、同じ Docker Compose 定義をそのまま `docker compose` でも使える構成にしています。
 
 ## ディレクトリ構成
 
 ```
-template/
+.
 ├── .devcontainer/
-│   └── devcontainer.json       # VS Code 拡張・Python・シェル設定
+│   └── devcontainer.json       # VS Code 側の最小設定
+├── assets/
+│   └── ur5e/
+│       ├── README.md           # UR5e 資産の配置ルール
+│       └── mjcf/
+│           └── .gitkeep
+├── docs/
+│   └── container-agent-notes.md
+├── scripts/
+│   └── fetch_ur5e_menagerie_assets.sh
+├── .vscode/
+│   └── tasks.json              # docker compose 操作用タスク
 ├── docker/
-│   ├── Dockerfile              # nvidia/cuda + Ubuntu 24.04, Python venv, 非 root ユーザー
-│   ├── docker-compose.yaml     # GPU・ボリューム・ipc: host
-│   ├── entrypoint.sh           # zsh 初期化 + gosu による非 root 切替
-│   ├── requirements.txt        # 共通 dev ツール (ruff, pytest, debugpy 等)
-│   └── .env.example            # マシン固有の設定テンプレート
-├── .dockerignore               # ホワイトリスト方式のビルドコンテキスト制御
-├── .gitignore                  # docker/.env 等を除外
+│   ├── Dockerfile              # CUDA + MuJoCo/Warp 向け依存を含むベースイメージ
+│   ├── docker-compose.yaml     # devcontainer/CLI 共通の起動定義
+│   ├── entrypoint.sh           # 初期化と非 root ユーザー切替
+│   ├── requirements.txt        # Python 依存
+│   ├── setup-env.sh            # docker/.env をホスト値から生成
+│   └── .env.example            # 手動編集用テンプレート
+├── src/
+│   └── mjwarp_ur5e/
+│       ├── assets.py
+│       ├── inspection.py
+│       ├── mujoco.py
+│       └── demos/
+│           ├── inspect_ur5e_mujoco.py
+│           ├── load_ur5e_mujoco.py
+│           └── render_ur5e_home.py
+├── tests/
+│   ├── test_assets.py
+│   ├── test_inspection.py
+│   └── test_import.py
+├── pyproject.toml              # Python パッケージ設定と ruff/pytest 設定
+├── .dockerignore               # ルートを build context にしたときの除外設定
+├── .gitignore
 └── README.md
 ```
 
-## 使い方
+## クイックスタート
 
-### 1. テンプレートをコピー
-
-```bash
-cp -r template/ my-new-project/
-cd my-new-project/
-```
-
-### 2. プロジェクト名を書き換える
-
-各ファイル内の `TODO` コメントを検索し、プロジェクトに合わせて変更する。
-
-| ファイル | 変更箇所 |
-|---------|---------|
-| `docker/docker-compose.yaml` | `name`, サービス名 (`dev`), `image` |
-| `.devcontainer/devcontainer.json` | `name`, `service` |
-
-### 3. 環境変数を設定
+### 1. `docker/.env` を生成
 
 ```bash
-cp docker/.env.example docker/.env
+./docker/setup-env.sh
 ```
 
-`docker/.env` を編集して CUDA バージョンや UID/GID を自分のマシンに合わせる。
+必要であれば [docker/.env.example](/home/atsushi.kuno/workspace/mjwarp_ur5e/docker/.env.example) を参考に、生成された `docker/.env` の値を調整します。
 
-### 4. プロジェクト固有の依存を追加
-
-`docker/requirements.txt` にプロジェクトで使うパッケージを追記する。
-
-### 5. コンテナを起動
-
-**VS Code (devcontainer)**:
-
-コマンドパレット → `Dev Containers: Reopen in Container`
-
-**CLI (standalone)**:
+### 2. Docker 単体で起動
 
 ```bash
-cd docker
-docker compose build
-docker compose up -d
-docker compose exec dev zsh
+docker compose -f docker/docker-compose.yaml --env-file docker/.env build
+docker compose -f docker/docker-compose.yaml --env-file docker/.env up -d --wait
+docker compose -f docker/docker-compose.yaml --env-file docker/.env exec dev zsh
 ```
 
-## 含まれる設定
+### 3. VS Code devcontainer で開く
 
-### ベースイメージ
+VS Code でこのワークスペースを開き、`Dev Containers: Reopen in Container` を実行します。
+devcontainer 側は [docker/docker-compose.yaml](/home/atsushi.kuno/workspace/mjwarp_ur5e/docker/docker-compose.yaml) をそのまま使います。
 
-`nvidia/cuda:${CUDA_VERSION}-devel-ubuntu24.04` — CUDA バージョンは `.env` の `CUDA_VERSION` で切替可能。
+## 何が揃うか
 
-### GPU サポート
+### 共通コンテナ基盤
 
-デフォルトで NVIDIA GPU 全台を割当。`ipc: host` により PyTorch DataLoader / NCCL の共有メモリも有効。
+- CUDA 付き Ubuntu 24.04 ベース
+- MuJoCo と Warp を想定した EGL ヘッドレス描画設定
+- ホスト UID/GID に揃えた非 root ユーザー
+- `docker compose` と devcontainer の単一ソース化
 
-### 非 root ユーザー
+### Python 開発基盤
 
-ホストの UID/GID をビルド時に注入し、コンテナ内でもホストと同じ権限で動作。`gosu` でランタイム切替。
+- `src/` レイアウトの Python パッケージ
+- `pytest` と `ruff` の最低限設定
+- entrypoint で editable install を実施
 
-### ボリュームマウント
+### VS Code 補助
 
-| ホスト | コンテナ | 用途 |
-|-------|---------|------|
-| プロジェクトルート | `/workspace` | ワークスペース |
-| `~/.ssh` | `~/.ssh` (ro) | SSH 鍵 |
-| `~/.gitconfig` | `~/.gitconfig` (ro) | Git 設定 |
-| `~/.netrc` | `~/.netrc` (ro) | wandb 等の認証 |
-| `/tmp/.X11-unix` | `/tmp/.X11-unix` | GUI 転送 |
-| named volume | `~/.cache/pip` | pip キャッシュ永続化 |
+- devcontainer 設定
+- Docker Compose 操作用タスク
+- Python interpreter / pytest / formatter の設定
 
-### VS Code 拡張 (14個)
+## 推奨ワークフロー
 
-Claude Code, Python, Pylance, Ruff, Jupyter, Docker, GitLens, Git Graph, Debugpy, YAML, TOML, Markdown, Error Lens, Todo Tree, Spell Checker, Path Intellisense
+### UR5e モデル配置
 
-### entrypoint.sh の動作
+UR5e の URDF や mesh は `assets/ur5e/` 配下に置く想定です。
+配置ルールは [assets/ur5e/README.md](/home/atsushi.kuno/workspace/mjwarp_ur5e/assets/ur5e/README.md) に記載しています。
+実データは巨大ファイル混入を避けるため git ignore しています。
 
-1. 初回起動時に zsh の設定ファイルを生成
-2. `~/.cache`, `~/.local`, `~/.config`, `~/.claude` を作成
-3. `pyproject.toml` があればプロジェクトを editable install
-4. `gosu` で非 root ユーザーに切替してコマンドを実行
+最初の導入は次のコマンドで行えます。
 
-## カスタマイズ例
+```bash
+./scripts/fetch_ur5e_menagerie_assets.sh
+```
 
-### GPU 不要の場合
+取得元は `google-deepmind/mujoco_menagerie` の `universal_robots_ur5e` です。
 
-`docker-compose.yaml` の `deploy` セクションと GPU 関連の `environment` を削除し、ベースイメージを `ubuntu:24.04` に変更する。
+### アルゴリズム実装
 
-### 追加サービスが必要な場合
+実験コードは `src/mjwarp_ur5e/` に、検証は `tests/` に置く前提です。
+Jupyter を使う場合はコンテナ内から `jupyter lab --ip 0.0.0.0 --no-browser` を実行してください。
 
-`docker-compose.yaml` に `services` を追加する (例: DB, Redis, Ollama 等)。
+### 最初の UR5e ロード確認
+
+`assets/ur5e/` にモデルを置いたら、次のコマンドで MuJoCo ロードを確認できます。
+
+```bash
+python -m mjwarp_ur5e.demos.load_ur5e_mujoco --headless --steps 10
+```
+
+viewer を開く場合は `--headless` を外してください。
+
+### joint 名と home 姿勢の確認
+
+次のコマンドで joint 名、site 名、home 姿勢、EE 位置を確認できます。
+
+```bash
+python -m mjwarp_ur5e.demos.inspect_ur5e_mujoco
+```
+
+JSON が欲しい場合は次を使います。
+
+```bash
+python -m mjwarp_ur5e.demos.inspect_ur5e_mujoco --json-output
+```
+
+### ホーム姿勢のレンダリング
+
+次のコマンドでホーム姿勢を `debug/ur5e_home.png` に出力できます。
+
+```bash
+python -m mjwarp_ur5e.demos.render_ur5e_home
+```
+
+同名の `debug/ur5e_home.json` に、レンダリング時の model 情報も出力します。
+
+ベース座標系の軸ベクトルを重ねる場合は次を使います。
+
+```bash
+python -m mjwarp_ur5e.demos.render_ur5e_home --show-base-frame
+```
+
+EE 座標系 `attachment_site` の軸も重ねる場合は次を使います。
+
+```bash
+python -m mjwarp_ur5e.demos.render_ur5e_home --show-base-frame --show-ee-frame
+```
+
+EE フランジ面に直方体ペイロードを接触配置した派生シーンは `assets/ur5e/mjcf/scene_with_box.xml` です。
+現在の寸法は EE 座標系で `x=25cm`, `y=25cm`, `z=25cm` です。
+ペイロード中心は、フランジ面に接する元位置を基準に EE 座標系の `y` 方向へ `-10cm` オフセットしています。
+この場合は `--model assets/ur5e/mjcf/scene_with_box.xml --camera payload_overview` を指定して読み込みます。
+
+このシーンでは、初期姿勢を `shoulder_pan_joint = +0.5\pi` とし、
+その姿勢での EE 基準位置からベース座標系で `x: [-35, +35] cm`, `y: [-20, +60] cm`、
+`z` は床面から `3cm` を下端とし、上端は従来どおり EE 基準の `+40cm` とした作業可能領域を半透明直方体として追加しています。
+作業領域まで含めて見る場合は `workspace_overview` カメラを使います。
+
+## 注意点
+
+- NVIDIA Container Toolkit がホストに入っている前提です。
+- GUI 表示を使う場合はホスト側の X11 設定が必要です。
+- UR5e 資産の取得元や表現形式はプロジェクト方針に応じて別途決めてください。
+
+## 初期確認コマンド
+
+```bash
+python -c "import mujoco, warp; print(mujoco.__version__)"
+python -c "import mjwarp_ur5e; print(mjwarp_ur5e.__all__)"
+pytest
+ruff check .
+```
+

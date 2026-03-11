@@ -13,6 +13,8 @@ ARG CUDA_VERSION=12.8.0
 FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
+ENV MUJOCO_GL=egl
+ENV PYOPENGL_PLATFORM=egl
 
 # ---- System packages --------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -32,13 +34,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-pip \
         python3-venv \
         python3-dev \
+        python-is-python3 \
         # GPU rendering (EGL / OSMesa for headless)
         libegl1 \
         libgl1 \
+        libgl1-mesa-dev \
         libgles2 \
         libosmesa6-dev \
         libglfw3 \
         libglfw3-dev \
+        libx11-6 \
+        libxext6 \
+        libxrender1 \
+        libxrandr2 \
+        libxinerama1 \
+        libxcursor1 \
+        libxi6 \
+        libxxf86vm1 \
+        libglib2.0-0 \
+        libxml2 \
+        libstdc++6 \
+        patchelf \
+        mesa-utils \
+        ffmpeg \
         # Editor (fallback)
         nano \
         vim \
@@ -63,7 +81,7 @@ RUN python3 -m venv ${VIRTUAL_ENV}
 ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 
 # ---- Pip packages (from separate requirements file) -------------------------
-COPY requirements.txt /tmp/requirements.txt
+COPY docker/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r /tmp/requirements.txt \
     && rm /tmp/requirements.txt
@@ -91,7 +109,7 @@ RUN if getent group ${HOST_GID} >/dev/null 2>&1; then \
     && chmod 0440 /etc/sudoers.d/${HOST_USER}
 
 # ---- Entrypoint -------------------------------------------------------------
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 WORKDIR /workspace

@@ -12,6 +12,9 @@ TARGET_USER="${HOST_USER:-developer}"
 TARGET_HOME=$(eval echo "~${TARGET_USER}" 2>/dev/null || echo "/home/${TARGET_USER}")
 TARGET_GROUP=$(id -gn "${TARGET_USER}" 2>/dev/null || echo "${TARGET_USER}")
 
+export MUJOCO_GL="${MUJOCO_GL:-egl}"
+export PYOPENGL_PLATFORM="${PYOPENGL_PLATFORM:-egl}"
+
 # ---- zsh bootstrap (only on first run) --------------------------------------
 if [ ! -f "${TARGET_HOME}/.zshrc" ]; then
     mkdir -p "${TARGET_HOME}"
@@ -47,10 +50,15 @@ for d in "${TARGET_HOME}/.cache" "${TARGET_HOME}/.local" "${TARGET_HOME}/.config
     chown "${TARGET_USER}:${TARGET_GROUP}" "$d" 2>/dev/null || true
 done
 
+for d in "${TARGET_HOME}/.cache/mujoco" "${TARGET_HOME}/.cache/warp"; do
+    mkdir -p "$d"
+    chown "${TARGET_USER}:${TARGET_GROUP}" "$d" 2>/dev/null || true
+done
+
 # ---- Install project in editable mode (if pyproject.toml exists) ------------
 if [ -f /workspace/pyproject.toml ]; then
     echo "Installing project in editable mode..."
-    pip install --no-deps -e /workspace 2>&1 | tail -1 || \
+    pip install --no-deps -e /workspace >/tmp/mjwarp_ur5e_pip_install.log 2>&1 || \
         echo "WARNING: editable install failed (non-fatal, continuing...)"
 fi
 
