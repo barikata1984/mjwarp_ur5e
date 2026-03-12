@@ -38,6 +38,7 @@ class OptimizerConfig:
     seed: int = 42
     joint_limits: JointLimits | None = None
     workspace_config: WorkspaceConstraintConfig | None = None
+    payload_workspace_config: WorkspaceConstraintConfig | None = None
     collision_config: CollisionConfig | None = None
     body_name: str = "payload_box_mount"
     site_name: str = "attachment_site"
@@ -110,6 +111,8 @@ class ExcitationOptimizer:
             collision_config=cfg.collision_config,
             model=self.model,
             data=self.data,
+            payload_workspace_config=cfg.payload_workspace_config,
+            payload_body_name=cfg.body_name,
         )
 
         def objective(x: np.ndarray) -> float:
@@ -203,6 +206,8 @@ class ExcitationOptimizer:
             collision_config=cfg.collision_config,
             model=self.model,
             data=self.data,
+            payload_workspace_config=cfg.payload_workspace_config,
+            payload_body_name=cfg.body_name,
         )
 
         margins: list[float] = []

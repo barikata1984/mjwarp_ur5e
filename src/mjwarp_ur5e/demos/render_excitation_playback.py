@@ -29,6 +29,30 @@ class RenderPlaybackConfig:
     show_ee_frame: bool = True
     axis_length: float = 0.15
     playback_speed: float = 1.0
+    multi_camera: bool = False
+    grid_cameras: tuple[str, ...] = ("", "view_x", "view_y", "view_z")
+    save_frames: bool = False
+    frames_dir: str = "debug/frames"
+
+
+def _render_single_view(
+    renderer: mujoco.Renderer,
+    model: mujoco.MjModel,
+    data: mujoco.MjData,
+    camera: str | None,
+    show_ee_frame: bool,
+    axis_length: float,
+) -> np.ndarray:
+    """Render a single camera view and return the image array."""
+    if camera:
+        renderer.update_scene(data, camera=camera)
+    else:
+        renderer.update_scene(data)
+
+    if show_ee_frame:
+        add_ee_frame_overlay(model, data, renderer.scene, axis_length)
+
+    return renderer.render().copy()
 
 
 def main() -> None:
@@ -50,17 +74,45 @@ def main() -> None:
     model, data = loaded.model, loaded.data
 
     # Setup renderer
-    width = min(config.width, int(model.vis.global_.offwidth))
-    height = min(config.height, int(model.vis.global_.offheight))
-    renderer = mujoco.Renderer(model, height=height, width=width)
+    tile_w = min(config.width, int(model.vis.global_.offwidth))
+    tile_h = min(config.height, int(model.vis.global_.offheight))
+    renderer = mujoco.Renderer(model, height=tile_h, width=tile_w)
 
-    # Compute frame sampling: trajectory at traj_fps, video at fps_video
+    # Determine camera list for multi-camera mode
+    if config.multi_camera:
+        cameras: list[str | None] = [(c if c else None) for c in config.grid_cameras]
+        while len(cameras) < 4:
+            cameras.append(None)
+        cameras = cameras[:4]
+        cam_labels = [c or "default" for c in cameras]
+        print(
+            f"Multi-camera mode: {cam_labels}, "
+            f"tile={tile_w}x{tile_h}, grid={tile_w * 2}x{tile_h * 2}"
+        )
+
+    # Prepare per-camera frame directories
+    frame_dirs: dict[str, Path] = {}
+    if config.save_frames and config.multi_camera:
+        base_dir = Path(config.frames_dir)
+        for cam in cameras:
+            label = cam or "default"
+            cam_dir = base_dir / label
+            cam_dir.mkdir(parents=True, exist_ok=True)
+            frame_dirs[label] = cam_dir
+        print(f"Saving per-camera frames to {base_dir}/")
+    elif config.save_frames:
+        base_dir = Path(config.frames_dir)
+        label = config.camera or "default"
+        cam_dir = base_dir / label
+        cam_dir.mkdir(parents=True, exist_ok=True)
+        frame_dirs[label] = cam_dir
+        print(f"Saving frames to {cam_dir}/")
+
+    # Compute frame sampling
     video_fps = config.fps_video
     speed = config.playback_speed
-    # Sample trajectory indices for each video frame
     video_duration = duration / speed
     n_video_frames = int(video_duration * video_fps)
-    # Map video frame index -> trajectory step index
     traj_indices = np.linspace(0, n_steps - 1, n_video_frames, dtype=int)
 
     print(
@@ -72,22 +124,39 @@ def main() -> None:
     n_joints = trajectory.position.shape[1]
 
     for frame_idx, traj_idx in enumerate(traj_indices):
-        # Set joint positions from trajectory
         q = trajectory.position[traj_idx]
         data.qpos[:n_joints] = q
         mujoco.mj_forward(model, data)
 
-        # Render
-        if config.camera is None:
-            renderer.update_scene(data)
+        if config.multi_camera:
+            tiles = []
+            for cam in cameras:
+                tile = _render_single_view(
+                    renderer, model, data, cam, config.show_ee_frame, config.axis_length
+                )
+                tiles.append(tile)
+                if config.save_frames:
+                    label = cam or "default"
+                    path = frame_dirs[label] / f"{frame_idx:04d}.png"
+                    iio.imwrite(str(path), tile)
+            top = np.concatenate([tiles[0], tiles[1]], axis=1)
+            bottom = np.concatenate([tiles[2], tiles[3]], axis=1)
+            grid = np.concatenate([top, bottom], axis=0)
+            frames.append(grid)
         else:
-            renderer.update_scene(data, camera=config.camera)
-
-        if config.show_ee_frame:
-            add_ee_frame_overlay(model, data, renderer.scene, config.axis_length)
-
-        image = renderer.render()
-        frames.append(image.copy())
+            image = _render_single_view(
+                renderer,
+                model,
+                data,
+                config.camera,
+                config.show_ee_frame,
+                config.axis_length,
+            )
+            frames.append(image)
+            if config.save_frames:
+                label = config.camera or "default"
+                path = frame_dirs[label] / f"{frame_idx:04d}.png"
+                iio.imwrite(str(path), image)
 
         if (frame_idx + 1) % 100 == 0 or frame_idx == n_video_frames - 1:
             t_traj = trajectory.time[traj_idx]
@@ -95,7 +164,7 @@ def main() -> None:
 
     renderer.close()
 
-    # Write video
+    # Write video from saved frames or in-memory frames
     output_path = Path(config.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     video_array = np.stack(frames)
@@ -106,6 +175,10 @@ def main() -> None:
         macro_block_size=1,
     )
     print(f"\nVideo saved to {output_path} ({output_path.stat().st_size / 1024:.0f} KB)")
+
+    if config.save_frames:
+        total = sum(len(list(d.glob("*.png"))) for d in frame_dirs.values())
+        print(f"Saved {total} frame images across {len(frame_dirs)} camera(s)")
 
 
 if __name__ == "__main__":

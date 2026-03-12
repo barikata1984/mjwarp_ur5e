@@ -44,6 +44,7 @@ class OptimizeExcitationConfig:
     seed: int = 42
     max_displacement: float = 0.5
     enable_collision: bool = True
+    enable_payload_workspace: bool = True
     output: str = "debug/excitation_result.json"
 
 

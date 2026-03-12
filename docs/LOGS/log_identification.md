@@ -93,3 +93,38 @@ base parameter 化は不要であることを確認。
 ### 追加スクリプト
 
 - `demos/render_excitation_playback.py` — 最適化結果 JSON → MuJoCo レンダリング → mp4 動画生成 CLI
+
+## 2026-03-12: ペイロード ワークスペース制約と多視点カメラ
+
+### 実施内容
+
+1. ペイロード箱の8頂点がワークスペース立方体内に収まる制約を追加
+2. 3軸カメラ (`view_x`, `view_y`, `view_z`) を追加し 2x2 グリッド動画を生成
+3. ワークスペース X 範囲をベース座標系で EE ホーム基準 -25cm ~ +45cm に設定
+
+### バグ修正
+
+- `model.body_pos` (親ローカル座標) を使っていたため制約が効かなかった → `data.xpos` (ワールド座標) に修正
+- body 原点のみの点チェック → geom 8頂点のワールド座標変換によるチェックに修正
+
+### 最適化結果 (頂点ベース制約)
+
+| 指標 | 値 |
+|------|------|
+| 条件数 | **3.03** |
+| 計算時間 | 121.4s |
+| 評価回数 | 5859 |
+| 最小マージン | 5.8mm |
+
+### 新規・変更モジュール
+
+- `workspace.py`: `_box_vertices`, `_evaluate_payload_vertices`, `make_payload_workspace_constraint`
+- `constraints.py`: `build_scipy_constraints` に `payload_workspace_config` パラメータ追加
+- `optimizer.py`: `OptimizerConfig.payload_workspace_config` 追加
+- `collision.py`: `CollisionConfig.payload_half_extents` / `payload_offset` (既存、次セッションで頂点ベースに改修予定)
+- `scene_with_box.xml`: `view_x`, `view_y`, `view_z` カメラ追加
+- `render_excitation_playback.py`: `--multi-camera`, `--save-frames` オプション追加
+
+### 残課題
+
+- ペイロード外形に基づくロボット-ペイロード衝突判定 (現在は body 原点の点判定)

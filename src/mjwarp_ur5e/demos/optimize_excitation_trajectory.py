@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import mujoco
 import numpy as np
 import tyro
 
@@ -10,7 +11,7 @@ from mjwarp_ur5e.identification.collision import CollisionConfig
 from mjwarp_ur5e.identification.io import save_optimization_result
 from mjwarp_ur5e.identification.optimizer import ExcitationOptimizer, OptimizerConfig
 from mjwarp_ur5e.identification.workspace import WorkspaceConstraintConfig
-from mjwarp_ur5e.model import load_model, reset_to_home
+from mjwarp_ur5e.model import get_named_object_id, load_model, reset_to_home
 
 
 def main() -> None:
@@ -35,6 +36,26 @@ def main() -> None:
     if config.enable_collision:
         collision_config = CollisionConfig()
 
+    payload_workspace_config: WorkspaceConstraintConfig | None = None
+    if config.enable_payload_workspace:
+        # Extract workspace box bounds from the workspace_region geom in the model
+        geom_id = get_named_object_id(
+            loaded.model, mujoco.mjtObj.mjOBJ_GEOM, "workspace_region_geom"
+        )
+        if geom_id is not None:
+            body_id = loaded.model.geom_bodyid[geom_id]
+            # Use data.xpos (world frame), not model.body_pos (parent-local frame)
+            mujoco.mj_kinematics(loaded.model, loaded.data)
+            center = loaded.data.xpos[body_id].copy()
+            half = loaded.model.geom_size[geom_id].copy()
+            box_lower = center - half
+            box_upper = center + half
+            print(f"  payload workspace bounds: {box_lower} .. {box_upper}")
+            payload_workspace_config = WorkspaceConstraintConfig(
+                box_lower=box_lower,
+                box_upper=box_upper,
+            )
+
     opt_config = OptimizerConfig(
         num_joints=6,
         num_harmonics=config.num_harmonics,
@@ -48,6 +69,7 @@ def main() -> None:
         seed=config.seed,
         workspace_config=workspace_config,
         collision_config=collision_config,
+        payload_workspace_config=payload_workspace_config,
     )
 
     optimizer = ExcitationOptimizer(

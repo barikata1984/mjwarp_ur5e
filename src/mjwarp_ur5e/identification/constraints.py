@@ -145,6 +145,8 @@ def build_scipy_constraints(
     collision_config: object | None = None,
     model: mujoco.MjModel | None = None,
     data: mujoco.MjData | None = None,
+    payload_workspace_config: object | None = None,
+    payload_body_name: str = "payload_box_mount",
 ) -> list[dict]:
     """Assemble all constraints in scipy.optimize format."""
     from mjwarp_ur5e.identification.collision import (
@@ -154,6 +156,7 @@ def build_scipy_constraints(
     )
     from mjwarp_ur5e.identification.workspace import (
         WorkspaceConstraintConfig,
+        make_payload_workspace_constraint,
         make_workspace_constraint,
     )
 
@@ -178,6 +181,17 @@ def build_scipy_constraints(
             {
                 "type": "ineq",
                 "fun": make_workspace_constraint(cache, workspace_config, model, data),
+            }
+        )
+
+    if payload_workspace_config is not None and model is not None and data is not None:
+        assert isinstance(payload_workspace_config, WorkspaceConstraintConfig)
+        constraints.append(
+            {
+                "type": "ineq",
+                "fun": make_payload_workspace_constraint(
+                    cache, payload_workspace_config, model, data, payload_body_name
+                ),
             }
         )
 
