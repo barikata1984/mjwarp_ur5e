@@ -1,0 +1,169 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import mujoco
+import numpy as np
+
+from mjwarp_ur5e.model import get_named_object_id
+
+from .sampling import sample_body_kinematics, set_model_state, trajectory_subsample_indices
+from .types import BodyKinematics, InertialParameters, RegressorSample
+
+
+def _skew(vector: np.ndarray) -> np.ndarray:
+    x, y, z = np.asarray(vector, dtype=np.float64)
+    return np.array(
+        [
+            [0.0, -z, y],
+            [z, 0.0, -x],
+            [-y, x, 0.0],
+        ],
+        dtype=np.float64,
+    )
+
+
+def _quat_to_rotation_matrix(quaternion_wxyz: np.ndarray) -> np.ndarray:
+    w, x, y, z = np.asarray(quaternion_wxyz, dtype=np.float64)
+    return np.array(
+        [
+            [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)],
+            [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)],
+            [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)],
+        ],
+        dtype=np.float64,
+    )
+
+
+def _spatial_inertia_matrix_from_vector(parameter_vector: np.ndarray) -> np.ndarray:
+    mass, hx, hy, hz, ixx, iyy, izz, ixy, ixz, iyz = np.asarray(
+        parameter_vector,
+        dtype=np.float64,
+    )
+    first_moments = np.array([hx, hy, hz], dtype=np.float64)
+    inertia = np.array(
+        [
+            [ixx, ixy, ixz],
+            [ixy, iyy, iyz],
+            [ixz, iyz, izz],
+        ],
+        dtype=np.float64,
+    )
+    spatial_inertia = np.zeros((6, 6), dtype=np.float64)
+    spatial_inertia[:3, :3] = inertia
+    spatial_inertia[:3, 3:] = _skew(first_moments)
+    spatial_inertia[3:, :3] = -_skew(first_moments)
+    spatial_inertia[3:, 3:] = mass * np.eye(3, dtype=np.float64)
+    return spatial_inertia
+
+
+def _force_cross_operator(spatial_velocity: np.ndarray) -> np.ndarray:
+    angular = np.asarray(spatial_velocity[:3], dtype=np.float64)
+    linear = np.asarray(spatial_velocity[3:], dtype=np.float64)
+    operator = np.zeros((6, 6), dtype=np.float64)
+    operator[:3, :3] = _skew(angular)
+    operator[:3, 3:] = _skew(linear)
+    operator[3:, 3:] = _skew(angular)
+    return operator
+
+
+def rigid_body_wrench_regressor(kinematics: BodyKinematics) -> np.ndarray:
+    spatial_velocity = kinematics.spatial_velocity_body
+    spatial_acceleration = kinematics.spatial_acceleration_body
+
+    basis_vectors = np.eye(10, dtype=np.float64)
+    cross_force = _force_cross_operator(spatial_velocity)
+    regressor = np.zeros((6, 10), dtype=np.float64)
+
+    for column_index, basis_vector in enumerate(basis_vectors):
+        spatial_inertia = _spatial_inertia_matrix_from_vector(basis_vector)
+        spatial_momentum = spatial_inertia @ spatial_velocity
+        regressor[:, column_index] = spatial_inertia @ spatial_acceleration + cross_force @ spatial_momentum
+
+    return regressor
+
+
+def sample_body_regressor(
+    model: mujoco.MjModel,
+    data: mujoco.MjData,
+    body_name: str,
+) -> RegressorSample:
+    kinematics = sample_body_kinematics(model, data, body_name)
+    regressor = rigid_body_wrench_regressor(kinematics)
+    return RegressorSample(body_name=body_name, regressor=regressor, kinematics=kinematics)
+
+
+def body_inertial_parameters_from_model(
+    model: mujoco.MjModel,
+    body_name: str,
+) -> InertialParameters:
+    body_id = get_named_object_id(model, mujoco.mjtObj.mjOBJ_BODY, body_name)
+    if body_id is None:
+        raise ValueError(f"Unknown body name: {body_name}")
+
+    mass = float(model.body_mass[body_id])
+    com_body = np.array(model.body_ipos[body_id], dtype=np.float64)
+    first_moments = mass * com_body
+
+    inertia_diag = np.array(model.body_inertia[body_id], dtype=np.float64)
+    inertia_com_inertial = np.diag(inertia_diag)
+    inertial_rotation = _quat_to_rotation_matrix(np.array(model.body_iquat[body_id], dtype=np.float64))
+    inertia_com_body = inertial_rotation @ inertia_com_inertial @ inertial_rotation.T
+
+    parallel_axis = mass * ((com_body @ com_body) * np.eye(3, dtype=np.float64) - np.outer(com_body, com_body))
+    inertia_origin_body = inertia_com_body + parallel_axis
+
+    return InertialParameters(
+        mass=mass,
+        first_moments=first_moments,
+        inertia_matrix=inertia_origin_body,
+    )
+
+
+def compute_wrench_from_parameters(
+    regressor: np.ndarray,
+    parameters: InertialParameters | np.ndarray,
+) -> np.ndarray:
+    if isinstance(parameters, InertialParameters):
+        parameter_vector = parameters.to_vector()
+    else:
+        parameter_vector = np.asarray(parameters, dtype=np.float64)
+
+    if parameter_vector.shape != (10,):
+        raise ValueError("parameter_vector must have shape (10,)")
+    return regressor @ parameter_vector
+
+
+def compute_stacked_body_regressor(
+    model: mujoco.MjModel,
+    data: mujoco.MjData,
+    q: np.ndarray,
+    dq: np.ndarray,
+    ddq: np.ndarray,
+    body_name: str,
+    subsample_factor: int = 1,
+) -> np.ndarray:
+    q_array = np.asarray(q, dtype=np.float64)
+    dq_array = np.asarray(dq, dtype=np.float64)
+    ddq_array = np.asarray(ddq, dtype=np.float64)
+
+    if q_array.ndim != 2 or q_array.shape[1] != model.nq:
+        raise ValueError(f"q must have shape (N, {model.nq})")
+    if dq_array.shape != (q_array.shape[0], model.nv):
+        raise ValueError(f"dq must have shape ({q_array.shape[0]}, {model.nv})")
+    if ddq_array.shape != (q_array.shape[0], model.nv):
+        raise ValueError(f"ddq must have shape ({q_array.shape[0]}, {model.nv})")
+
+    rows: list[np.ndarray] = []
+    for index in trajectory_subsample_indices(q_array.shape[0], subsample_factor):
+        set_model_state(model, data, q_array[index], dq_array[index], ddq_array[index])
+        rows.append(sample_body_regressor(model, data, body_name).regressor)
+
+    return np.vstack(rows)
+
+
+def compute_condition_number(regressor: np.ndarray, singular_value_floor: float = 1e-12) -> float:
+    singular_values = np.linalg.svd(np.asarray(regressor, dtype=np.float64), compute_uv=False)
+    if singular_values[-1] < singular_value_floor:
+        return float("inf")
+    return float(singular_values[0] / singular_values[-1])
