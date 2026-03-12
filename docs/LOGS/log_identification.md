@@ -290,3 +290,30 @@ ROSノード等の外部システムから直接再生可能な、各タイム�
 - 92/92 テストパス
 - ruff lint / format クリーン
 - 100Hz (101 steps) および 50Hz (51 steps) での出力を確認
+
+---
+
+## 2026-03-12: デフォルト出力パスの統一と既存結果の調査
+
+### 出力パス統一
+
+全パイプラインのデフォルト出力先を `debug/` → `results/` に変更。
+
+- `configs/default.yaml` の output セクション
+- `cli/configs.py` の全 Config クラスのデフォルト値
+- `tests/test_cli_excitation.py` のアサーション
+- 92/92 テストパス
+
+### 既存 excitation_result.json の調査
+
+`debug/excitation_result.json` はテスト用短縮設定で生成されていたことを確認:
+
+| パラメータ | 既存結果 | default.yaml |
+|---|---|---|
+| duration | 1.0 秒 | 10.0 秒 |
+| num_harmonics | 2 | 5 |
+| n_monte_carlo | 1 | 20 |
+| max_iter_per_start | 5 | 200 |
+
+レンダリング動画（5秒）は `playback_speed=0.2` で引き伸ばしたもの。
+実時間では1秒の軌道であり、デフォルト設定での本番再最適化が必要。
