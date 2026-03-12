@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from mjwarp_ur5e.assets import get_default_ur5e_model_candidates, get_asset_layout
+from mjwarp_ur5e.assets import get_asset_layout, get_default_ur5e_model_candidates
 
 
 def test_asset_layout_points_to_repo_assets() -> None:

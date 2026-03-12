@@ -7,15 +7,16 @@ from mjwarp_ur5e.trajectories import (
     WindowedFourierTrajectoryConfig,
 )
 
-
-Q0 = np.array([
-    np.pi / 2,
-    -np.pi / 2,
-    np.pi / 2,
-    -np.pi / 2,
-    -np.pi / 2,
-    np.pi / 2,
-])
+Q0 = np.array(
+    [
+        np.pi / 2,
+        -np.pi / 2,
+        np.pi / 2,
+        -np.pi / 2,
+        -np.pi / 2,
+        np.pi / 2,
+    ]
+)
 
 
 def _random_coefficients(

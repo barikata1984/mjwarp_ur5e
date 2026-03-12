@@ -3,7 +3,7 @@ import pytest
 
 mujoco = pytest.importorskip("mujoco")
 
-from mjwarp_ur5e.identification import (
+from mjwarp_ur5e.identification import (  # noqa: E402
     body_inertial_parameters_from_model,
     compute_condition_number,
     compute_stacked_body_regressor,
@@ -11,9 +11,11 @@ from mjwarp_ur5e.identification import (
     sample_body_regressor,
     set_model_state,
 )
-from mjwarp_ur5e.model import load_model, reset_to_home
-from mjwarp_ur5e.trajectories import WindowedFourierTrajectory, WindowedFourierTrajectoryConfig
-
+from mjwarp_ur5e.model import load_model, reset_to_home  # noqa: E402
+from mjwarp_ur5e.trajectories import (  # noqa: E402
+    WindowedFourierTrajectory,
+    WindowedFourierTrajectoryConfig,
+)
 
 PAYLOAD_BODY_NAME = "payload_box_mount"
 Q0 = np.array(

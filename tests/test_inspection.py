@@ -2,7 +2,7 @@ import pytest
 
 mujoco = pytest.importorskip("mujoco")
 
-from mjwarp_ur5e.inspection import inspect_ur5e_model
+from mjwarp_ur5e.inspection import inspect_ur5e_model  # noqa: E402
 
 
 def test_inspection_returns_expected_ur5e_metadata() -> None:

@@ -25,27 +25,49 @@
   - `src/mjwarp_ur5e/identification/` を追加済み
   - MuJoCo body kinematics 抽出、payload 慣性パラメータ抽出、剛体 wrench regressor 構築を実装済み
   - 回帰行列テストを追加し、フェーズ 1 のテストと合わせてコンテナ内 `pytest` 通過済み
-- フェーズ 3: 未着手
-  - joint limit、workspace、collision の制約レイヤは未実装
-- フェーズ 4: 未着手
-  - 最適化器、objective、validation、結果保存は未実装
-- フェーズ 5: 未着手
-  - `tyro` ベースの励起軌道 CLI は未実装
-- フェーズ 6: 未着手
-  - MuJoCo 上での軌道再生と時系列計測基盤は未実装
-- フェーズ 7: 未着手
-  - LS / TLS / RTLS 推定器統合は未実装
-- フェーズ 8: 未着手
-  - Warp による高速化は未着手
-- フェーズ 9: 継続中
-  - 各フェーズに応じた unit test は追加中
-  - integration test と smoke test は後続フェーズで整備する
+- フェーズ 3: 完了
+  - `constraints.py` (joint limits, trajectory cache, scipy constraints builder)
+  - `workspace.py` (displacement / box bounds constraints)
+  - `collision.py` (ground clearance, self-collision, payload collision)
+  - 14 テスト追加済み
+- フェーズ 4: 完了
+  - `objective.py` (条件数目的関数, full resolution 評価)
+  - `optimizer.py` (multi-start SLSQP, OptimizerConfig, OptimizationResult)
+  - `io.py` (JSON 保存/読込, trajectory 再構築)
+  - 8 テスト追加済み
+- フェーズ 5: 完了
+  - `demos/optimize_excitation_trajectory.py` (tyro CLI)
+  - `demos/validate_excitation_trajectory.py` (tyro CLI)
+  - CLI config を `cli/configs.py` に追加
+  - 4 テスト追加済み
+- フェーズ 6: 完了
+  - `data_buffer.py` (SensorSample, DataBuffer, regressor data 構築)
+  - `execution.py` (TrajectoryPlayback, open-loop / PD 制御, ノイズ付き計測)
+  - `demos/run_identification_playback.py` (tyro CLI)
+  - 10 テスト追加済み
+- フェーズ 7: 完了
+  - `estimators/batch_ls.py` (Batch LS, Tikhonov 正則化)
+  - `estimators/batch_tls.py` (Batch TLS, truncated TLS)
+  - `estimators/rtls.py` (Recursive TLS, forgetting factor, windowed)
+  - `estimators/types.py` (EstimationResult, parallel axis theorem)
+  - `demos/run_inertial_identification.py` (full pipeline CLI)
+  - 19 テスト追加済み
+- フェーズ 8: 完了
+  - `trajectories/fourier_warp.py` (Warp kernel for Fourier trajectory)
+  - `identification/regressor_warp.py` (batch skew-symmetric, batch condition number)
+  - NumPy fallback 付き、既存 API は未変更
+  - 9 テスト追加済み
+- フェーズ 9: 完了
+  - unit test: 各フェーズで追加済み (79 テスト)
+  - integration test: 最適化 → 検証、再生 → 推定、制約評価、JSON I/O (4 テスト)
+  - smoke test: 全 CLI の `--help` 実行 (4 テスト)
+  - ruff lint / format: 全ファイルクリーン
+  - 合計 87 テスト全通過
 
 ### 現在位置
 
-- 実装済みの最前線はフェーズ 2 まで
-- 次の着手対象はフェーズ 3 の制約評価レイヤ
-- 直近の主タスクは、trajectory から joint / workspace / collision 制約を評価できる形に API を固めること
+- 全フェーズ (0-9) 完了
+- 87 テスト全通過、ruff lint/format クリーン
 
 ### 現時点の技術メモ
 

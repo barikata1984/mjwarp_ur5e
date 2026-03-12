@@ -7,12 +7,12 @@
 - [x] フェーズ 0: 要件固定と数理対象の確定
 - [x] フェーズ 1: 軌道表現レイヤの実装 (`trajectories/`)
 - [x] フェーズ 2: MuJoCo ベースの運動学・回帰行列構築 (`identification/`)
-- [ ] フェーズ 3: 制約評価レイヤの実装 (`constraints.py`, `collision.py`, `workspace.py`)
-- [ ] フェーズ 4: 最適化エンジンの実装 (`optimizer.py`, `objective.py`, `io.py`)
-- [ ] フェーズ 5: CLI とユーザー導線の整備
-- [ ] フェーズ 6: MuJoCo 上での軌道再生と計測基盤
-- [ ] フェーズ 7: 慣性推定器との接続 (LS / TLS / RTLS)
-- [ ] フェーズ 8: Warp 導入と高速化
+- [x] フェーズ 3: 制約評価レイヤの実装 (`constraints.py`, `collision.py`, `workspace.py`)
+- [x] フェーズ 4: 最適化エンジンの実装 (`optimizer.py`, `objective.py`, `io.py`)
+- [x] フェーズ 5: CLI とユーザー導線の整備
+- [x] フェーズ 6: MuJoCo 上での軌道再生と計測基盤 (`execution.py`, `data_buffer.py`)
+- [x] フェーズ 7: 慣性推定器との接続 (LS / TLS / RTLS)
+- [x] フェーズ 8: Warp 導入と高速化
 
 ## インフラ・共通
 
