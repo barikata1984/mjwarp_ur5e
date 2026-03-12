@@ -113,7 +113,7 @@ def test_collision_checker_home_config_is_safe() -> None:
     loaded = _load_scene()
     checker = CollisionChecker(loaded.model, loaded.data)
     clearance = checker.check_single_config(Q0)
-    assert clearance > 0, "Home configuration should be collision-free"
+    assert clearance > 0, f"Home configuration should be collision-free, got {clearance:.4f}"
 
 
 def test_collision_checker_trajectory() -> None:
@@ -124,6 +124,85 @@ def test_collision_checker_trajectory() -> None:
     sample = cache.get(x)
     clearance = checker.compute_min_clearance(sample.position)
     assert np.isfinite(clearance)
+
+
+def test_collision_large_payload_detected_by_surface() -> None:
+    """A huge payload box should collide with link capsules."""
+    loaded = _load_scene()
+    config = CollisionConfig(payload_half_extents=[0.5, 0.5, 0.5], payload_offset=[0, 0, 0.10])
+    checker = CollisionChecker(loaded.model, loaded.data, config)
+    clearance = checker.check_single_config(Q0)
+    assert clearance < 0, "Large payload box surface should penetrate link capsules"
+
+
+def test_collision_box_capsule_clearance_unit() -> None:
+    """Unit test for box-capsule surface distance computation."""
+    box_center = np.zeros(3)
+    box_rot = np.eye(3)
+    half = np.ones(3)
+
+    # Capsule along x-axis at (3, 0, 0) with half-length 0.5, radius 0.1
+    # Closest capsule point to box: (2.5, 0, 0), box face at x=1
+    # clearance = 1.5 - 0.1 = 1.4
+    c = CollisionChecker._box_capsule_clearance(
+        box_center,
+        box_rot,
+        half,
+        np.array([2.5, 0, 0]),
+        np.array([3.5, 0, 0]),
+        0.1,
+    )
+    np.testing.assert_allclose(c, 1.4, atol=1e-10)
+
+    # Capsule passing through box face: endpoints at (0, 0, 0) and (2, 0, 0)
+    # Segment intersects box at x=1, so segment-AABB dist=0
+    # clearance = 0 - 0.1 = -0.1
+    c = CollisionChecker._box_capsule_clearance(
+        box_center,
+        box_rot,
+        half,
+        np.array([0, 0, 0]),
+        np.array([2, 0, 0]),
+        0.1,
+    )
+    np.testing.assert_allclose(c, -0.1, atol=1e-10)
+
+
+def test_collision_auto_extracts_payload_geometry() -> None:
+    """CollisionChecker should auto-extract payload box geometry from model."""
+    loaded = _load_scene()
+    checker = CollisionChecker(loaded.model, loaded.data)
+    # Actual MJCF payload box: half_extents=[0.125, 0.125, 0.125], offset=[0, -0.1, 0.125]
+    np.testing.assert_allclose(checker._payload_half_extents, [0.125, 0.125, 0.125])
+    np.testing.assert_allclose(checker._payload_offset, [0, -0.1, 0.125])
+
+
+def test_collision_home_config_safe_with_actual_geometry() -> None:
+    """Home configuration should be collision-free with model-extracted geometry."""
+    loaded = _load_scene()
+    checker = CollisionChecker(loaded.model, loaded.data)
+    clearance = checker.check_single_config(Q0)
+    assert clearance > 0, f"Home config should be safe, got clearance={clearance:.4f}"
+
+
+def test_collision_payload_ground_clearance() -> None:
+    """Payload ground clearance should use box vertices, not just body origin."""
+    loaded = _load_scene()
+    # Small box high above ground → positive clearance
+    config_safe = CollisionConfig(
+        payload_half_extents=[0.01, 0.01, 0.01], payload_offset=[0, 0, 0.05]
+    )
+    checker_safe = CollisionChecker(loaded.model, loaded.data, config_safe)
+    clearance_safe = checker_safe.check_single_config(Q0)
+
+    # Large box that may reach ground → smaller clearance
+    config_big = CollisionConfig(
+        payload_half_extents=[0.01, 0.01, 0.5], payload_offset=[0, 0, 0.05]
+    )
+    checker_big = CollisionChecker(loaded.model, loaded.data, config_big)
+    clearance_big = checker_big.check_single_config(Q0)
+
+    assert clearance_big < clearance_safe, "Larger box should have smaller ground clearance"
 
 
 # --- build_scipy_constraints tests ---
