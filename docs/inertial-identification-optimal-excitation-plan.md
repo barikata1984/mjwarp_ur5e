@@ -446,8 +446,8 @@
 - ~~payload 回帰行列を MuJoCo のどの内部量から最も素直に構築するか~~ → 解決済み。`mj_jacBody` による Jacobian と `mj_objectVelocity` / `mj_objectAcceleration` の組合せで構築する
 - `attachment_site` 基準での wrench 観測モデルをどう定義するか
 - 最適化結果の保存先を `debug/` と `data/` のどちらに置くか
-- 作業領域制約を base frame で持つか、初期 EE 基準で持つか
-- 衝突判定を幾何近似で固定するか、MuJoCo 接触情報へ広げるか
+- ~~作業領域制約を base frame で持つか、初期 EE 基準で持つか~~ → 解決済み。EE ホーム位置基準で X 軸方向 -25cm〜+45cm、Y/Z は元の範囲を維持。ペイロード geom の 8 頂点をワールド座標変換してチェックする
+- 衝突判定を幾何近似で固定するか、MuJoCo 接触情報へ広げるか（次の開発アイテム: ペイロード外形ベースのロボット-ペイロード衝突判定）
 
 ## 参考
 
