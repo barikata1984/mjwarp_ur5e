@@ -205,3 +205,39 @@ clearance = ||local - closest|| - sphere_radius
 
 - `debug/excitation_result.json` — 最適化結果
 - `debug/excitation_playback.mp4` — 多視点 MuJoCo 再生動画 (5s, 30fps, 4カメラ 2x2)
+
+---
+
+## 2026-03-12: コードベースのモジュラー化・品質リファクタリング
+
+### 目的
+
+3エージェント並列レビュー（再利用・品質・効率）を実施し、スタッフエンジニア品質への再編を行った。
+
+### 主な変更
+
+#### YAML コンフィグシステム
+- `configs/default.yaml` を新設: パイプライン全体のデフォルト設定を一元管理
+- `cli/yaml_config.py` を新設: YAML ローダー + tyro CLI オーバーライドの統合
+
+#### コンフィグ集約
+- `cli/configs.py` に全デモコンフィグを集約: `ModelConfig` / `ResultInputConfig` ベースクラスによる継承階層
+- 5つのデモスクリプトからインラインコンフィグを削除
+
+#### 共通ユーティリティ抽出
+- `model.py` に `load_and_reset()` ヘルパーを追加 (5デモの3行ボイラープレートを解消)
+- `optimizer.py` に `_build_cache_and_constraints()` を抽出 (`optimize()` / `validate_trajectory()` の重複排除)
+- `workspace.py` に `_compute_box_margin()` を抽出 (box/payload 制約の重複排除)
+
+#### 型安全性の改善
+- `constraints.py`: `object | None` → `WorkspaceConstraintConfig | None` / `CollisionConfig | None`
+- `estimators/batch_ls.py`, `batch_tls.py`: 冗長な `_condition_number()` ラッパー関数を削除
+
+#### ホットパス最適化
+- `trajectories/base.py`: `time` プロパティを copy → read-only view に変更 (最適化中の1000+ 配列コピーを解消)
+- `workspace.py`: 制約クロージャ内の `np.asarray()` を factory スコープにホイスト
+
+### 検証結果
+
+- 92/92 テストパス
+- ruff lint / format クリーン
