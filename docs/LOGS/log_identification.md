@@ -127,4 +127,81 @@ base parameter 化は不要であることを確認。
 
 ### 残課題
 
-- ペイロード外形に基づくロボット-ペイロード衝突判定 (現在は body 原点の点判定)
+- ~~ペイロード外形に基づくロボット-ペイロード衝突判定 (現在は body 原点の点判定)~~ → 解決済み
+
+## 2026-03-12: サーフェスベースのペイロード衝突判定
+
+### 問題
+
+`_check_payload_collision` がペイロードを body 原点の1点として扱っており、箱の面・辺がリンク球に食い込むケースを見逃していた。
+
+### 修正
+
+OBB (Oriented Bounding Box) と球の解析的最短距離を実装:
+
+1. `_box_sphere_clearance()`: 球の中心をボックスのローカル座標系に変換し、各軸をクランプして最近接点を求め、サーフェス間距離を返す
+2. `_check_payload_collision()`: 各非隣接リンク球に対して box-sphere 距離を計算
+3. `_check_payload_ground_clearance()`: 8頂点の最小 z で地面クリアランスを判定（凸体に対して厳密）
+
+### アルゴリズム
+
+```python
+local = box_rot.T @ (sphere_center - box_center)
+closest = np.clip(local, -half_extents, half_extents)
+clearance = ||local - closest|| - sphere_radius
+```
+
+面・辺・頂点すべてのケースを正しく処理する。
+
+### テスト追加 (初版)
+
+- `test_collision_box_sphere_clearance_unit`: 外部・内部・角の3ケースを検証
+- `test_collision_large_payload_detected_by_surface`: 巨大ペイロードで面衝突を検出
+- `test_collision_payload_ground_clearance`: ペイロードサイズによる地面クリアランス差を検証
+
+### 初版の問題
+
+- CollisionConfig のデフォルト値がハードコードされており MJCF の実ジオメトリと不一致
+  - `payload_half_extents`: [0.05, 0.075, 0.10] → 実値 **[0.125, 0.125, 0.125]**
+  - `payload_offset`: [0, 0, 0.10] → 実値 **[0, -0.1, 0.125]**
+- リンクを body 原点中心の球で近似 → 細長いカプセルとの乖離が大きく衝突を見逃す
+
+## 2026-03-12: Box-Capsule 衝突判定への改修
+
+### 修正
+
+1. **ペイロードジオメトリの自動抽出**: MuJoCo モデルの `geom_size`/`geom_pos` から box geom の half_extents と offset を読み取り
+2. **リンクカプセルの自動抽出**: 各リンクの capsule/cylinder geom の端点・半径を body ローカル座標で保持
+3. **Box-Capsule 距離**: 交互投影法 (`_segment_aabb_distance`) でボックスローカル座標のセグメント-AABB 距離を計算し、カプセル半径を減算
+4. **自己衝突**: sphere-sphere のまま (UR5e 用チューニング済みデフォルト radii を維持)
+
+### CollisionConfig の変更
+
+| フィールド | 旧 | 新 |
+|---|---|---|
+| `link_radii` | `list[float]` (ハードコード) | 削除 |
+| `self_collision_radii` | — | `list[float]` (UR5e デフォルト) |
+| `payload_half_extents` | `list[float]` (ハードコード) | `list[float] \| None` (None=モデル自動) |
+| `payload_offset` | `list[float]` (ハードコード) | `list[float] \| None` (None=モデル自動) |
+| `safety_margin` | 0.005 | **0.02** |
+
+### テスト結果
+
+- 92 テスト全通過 (2件追加: box-capsule unit, auto-extract geometry)
+- ruff lint / format クリーン
+
+### 最適化結果 (Box-Capsule 衝突制約, safety_margin=5cm)
+
+| 指標 | 値 |
+|------|------|
+| 条件数 | **3.02** |
+| 計算時間 | 754.3s |
+| 評価回数 | 5855 |
+| best start | 1 |
+| 最小クリアランス（制約値） | 5.5mm (step 39) |
+| 実際のサーフェス間距離 | **55.5mm** |
+
+### 出力
+
+- `debug/excitation_result.json` — 最適化結果
+- `debug/excitation_playback.mp4` — 多視点 MuJoCo 再生動画 (5s, 30fps, 4カメラ 2x2)
