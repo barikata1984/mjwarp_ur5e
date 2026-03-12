@@ -11,6 +11,50 @@
 
 本メモは実装順序をフェーズ単位で固定し、各フェーズの成果物、責務、受け入れ条件、注意点を明確化する。
 
+## 作業進捗
+
+### フェーズ進捗一覧
+
+- フェーズ 0: 完了
+  - 数理対象、評価対象フレーム、初期シーン、最適化の基本方針を整理済み
+- フェーズ 1: 完了
+  - `src/mjwarp_ur5e/trajectories/` を追加済み
+  - `base`, `fourier`, `window`, `windowed_fourier` を実装済み
+  - 軌道生成テストを追加し、コンテナ内 `pytest` 通過済み
+- フェーズ 2: 完了
+  - `src/mjwarp_ur5e/identification/` を追加済み
+  - MuJoCo body kinematics 抽出、payload 慣性パラメータ抽出、剛体 wrench regressor 構築を実装済み
+  - 回帰行列テストを追加し、フェーズ 1 のテストと合わせてコンテナ内 `pytest` 通過済み
+- フェーズ 3: 未着手
+  - joint limit、workspace、collision の制約レイヤは未実装
+- フェーズ 4: 未着手
+  - 最適化器、objective、validation、結果保存は未実装
+- フェーズ 5: 未着手
+  - `tyro` ベースの励起軌道 CLI は未実装
+- フェーズ 6: 未着手
+  - MuJoCo 上での軌道再生と時系列計測基盤は未実装
+- フェーズ 7: 未着手
+  - LS / TLS / RTLS 推定器統合は未実装
+- フェーズ 8: 未着手
+  - Warp による高速化は未着手
+- フェーズ 9: 継続中
+  - 各フェーズに応じた unit test は追加中
+  - integration test と smoke test は後続フェーズで整備する
+
+### 現在位置
+
+- 実装済みの最前線はフェーズ 2 まで
+- 次の着手対象はフェーズ 3 の制約評価レイヤ
+- 直近の主タスクは、trajectory から joint / workspace / collision 制約を評価できる形に API を固めること
+
+### 現時点の技術メモ
+
+- (解決済み) stacked regressor が rank 9 で止まっていた問題を修正し、動的軌道で **full rank 10** を達成した
+- 原因: `set_model_state` が `mj_forward` を呼んでおり、ユーザ指定の `qacc` が順動力学で上書きされていた。さらに MuJoCo 3.6 のキネマティクスパイプラインでは `data.cacc` (body Cartesian 加速度) が未計算のため、`mj_objectAcceleration` が返す angular acceleration が常にゼロだった。結果として慣性テンソルのトレース方向 `Ixx + Iyy + Izz` が null space に落ちていた
+- 修正: `mj_forward` を `mj_kinematics` + `mj_comPos` + `mj_fwdVelocity` に置き換え、body 加速度を Jacobian (`mj_jacBody`) 経由で `J @ qacc` として計算するようにした
+- 修正後の条件数は動的軌道で約 5〜50 の有限値になり、10 パラメータすべてが独立に励起される
+- base parameter 化は不要であることを確認した
+
 ## 前提と設計方針
 
 - 現在のロボットモデルの正系は MuJoCo MJCF であり、最適化の可行性評価もまず MuJoCo ベースで行う
@@ -377,7 +421,7 @@
 
 ## 未解決事項
 
-- payload 回帰行列を MuJoCo のどの内部量から最も素直に構築するか
+- ~~payload 回帰行列を MuJoCo のどの内部量から最も素直に構築するか~~ → 解決済み。`mj_jacBody` による Jacobian と `mj_objectVelocity` / `mj_objectAcceleration` の組合せで構築する
 - `attachment_site` 基準での wrench 観測モデルをどう定義するか
 - 最適化結果の保存先を `debug/` と `data/` のどちらに置くか
 - 作業領域制約を base frame で持つか、初期 EE 基準で持つか

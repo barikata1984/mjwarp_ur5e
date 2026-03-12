@@ -16,14 +16,16 @@ from mjwarp_ur5e.trajectories import WindowedFourierTrajectory, WindowedFourierT
 
 
 PAYLOAD_BODY_NAME = "payload_box_mount"
-Q0 = np.array([
-    np.pi / 2,
-    -np.pi / 2,
-    np.pi / 2,
-    -np.pi / 2,
-    -np.pi / 2,
-    0.0,
-])
+Q0 = np.array(
+    [
+        np.pi / 2,
+        -np.pi / 2,
+        np.pi / 2,
+        -np.pi / 2,
+        -np.pi / 2,
+        0.0,
+    ]
+)
 
 
 def _load_payload_scene():
@@ -123,8 +125,44 @@ def test_stacked_body_regressor_shape_and_condition_number_change_with_motion() 
     dynamic_rank = np.linalg.matrix_rank(dynamic_regressor)
 
     assert np.isinf(static_condition) or static_condition > 1e8
-    assert np.isinf(dynamic_condition)
-    assert dynamic_rank > static_rank
+    assert np.isfinite(dynamic_condition)
+    assert dynamic_rank == 10
+    assert static_rank < dynamic_rank
+
+
+def test_set_model_state_preserves_qacc() -> None:
+    loaded = _load_payload_scene()
+    rng = np.random.default_rng(99)
+    qacc_desired = rng.uniform(-5, 5, loaded.model.nv)
+    set_model_state(
+        loaded.model,
+        loaded.data,
+        Q0,
+        rng.uniform(-1, 1, loaded.model.nv),
+        qacc_desired,
+    )
+    np.testing.assert_allclose(loaded.data.qacc, qacc_desired)
+
+
+def test_dynamic_trajectory_regressor_predicts_wrench() -> None:
+    loaded = _load_payload_scene()
+    parameters = body_inertial_parameters_from_model(loaded.model, PAYLOAD_BODY_NAME)
+
+    dynamic_sample = _trajectory(scale=0.3)
+    idx = dynamic_sample.position.shape[0] // 2
+    set_model_state(
+        loaded.model,
+        loaded.data,
+        dynamic_sample.position[idx],
+        dynamic_sample.velocity[idx],
+        dynamic_sample.acceleration[idx],
+    )
+    sample = sample_body_regressor(loaded.model, loaded.data, PAYLOAD_BODY_NAME)
+    wrench = compute_wrench_from_parameters(sample.regressor, parameters)
+
+    assert wrench.shape == (6,)
+    assert np.all(np.isfinite(wrench))
+    assert np.linalg.norm(wrench[:3]) > 0, "torque should be non-zero during motion"
 
 
 def test_set_model_state_validates_shapes() -> None:
