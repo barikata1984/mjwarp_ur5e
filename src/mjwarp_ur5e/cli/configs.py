@@ -79,6 +79,17 @@ class OptimizeExcitationConfig(ModelConfig):
     enable_collision: bool = True
     enable_payload_workspace: bool = True
     output: str = "debug/excitation_result.json"
+    trajectory_output: str = "debug/excitation_trajectory.json"
+    trajectory_fps: float = 0.0
+
+
+@dataclass(slots=True)
+class ExportTrajectoryConfig:
+    """Config for exporting a sampled trajectory JSON from an optimization result."""
+
+    result_json: str = "debug/excitation_result.json"
+    output: str = "debug/excitation_trajectory.json"
+    fps: float = 0.0
 
 
 @dataclass(slots=True)

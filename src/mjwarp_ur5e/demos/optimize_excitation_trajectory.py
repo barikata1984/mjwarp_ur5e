@@ -8,7 +8,11 @@ import tyro
 
 from mjwarp_ur5e.cli import OptimizeExcitationConfig
 from mjwarp_ur5e.identification.collision import CollisionConfig
-from mjwarp_ur5e.identification.io import save_optimization_result
+from mjwarp_ur5e.identification.io import (
+    result_to_trajectory,
+    save_optimization_result,
+    save_trajectory_json,
+)
 from mjwarp_ur5e.identification.optimizer import ExcitationOptimizer, OptimizerConfig
 from mjwarp_ur5e.identification.workspace import WorkspaceConstraintConfig
 from mjwarp_ur5e.model import get_named_object_id, load_and_reset
@@ -79,6 +83,19 @@ def main() -> None:
     print(f"  Total evaluations: {result.n_evaluations}")
     print(f"  Best start index: {result.best_start_index}")
     print(f"  Output: {output_path}")
+
+    # Export sampled trajectory JSON for real robot playback
+    traj_fps = config.trajectory_fps if config.trajectory_fps > 0 else None
+    trajectory = result_to_trajectory(result, fps=traj_fps)
+    traj_path = Path(config.trajectory_output)
+    save_trajectory_json(
+        trajectory,
+        traj_path,
+        condition_number=result.condition_number,
+        source=output_path.name,
+    )
+    effective_fps = traj_fps if traj_fps else config.fps
+    print(f"  Trajectory JSON: {traj_path} ({effective_fps:.0f} Hz, {len(trajectory.time)} steps)")
 
 
 if __name__ == "__main__":

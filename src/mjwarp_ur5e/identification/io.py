@@ -96,15 +96,91 @@ def load_optimization_result(path: str | Path) -> OptimizationResult:
 
 def result_to_trajectory(
     result: OptimizationResult,
+    fps: float | None = None,
 ) -> TrajectorySample:
-    """Reconstruct a full trajectory from an OptimizationResult."""
+    """Reconstruct a full trajectory from an OptimizationResult.
+
+    Args:
+        result: Optimization result containing Fourier coefficients.
+        fps: Override sampling rate. If None, uses the optimization fps.
+    """
     cfg = result.config
+    output_fps = fps if fps is not None else cfg.fps
     return build_trajectory_from_params(
         result.x_opt,
         cfg.num_joints,
         cfg.num_harmonics,
         cfg.base_freq,
         cfg.duration,
-        cfg.fps,
+        output_fps,
         result.q0,
     )
+
+
+# UR5e joint names in URDF order
+_UR5E_JOINT_NAMES: list[str] = [
+    "shoulder_pan",
+    "shoulder_lift",
+    "elbow",
+    "wrist_1",
+    "wrist_2",
+    "wrist_3",
+]
+
+
+def save_trajectory_json(
+    trajectory: TrajectorySample,
+    path: str | Path,
+    *,
+    condition_number: float | None = None,
+    source: str | None = None,
+) -> None:
+    """Save a sampled trajectory as a self-contained JSON for real robot playback.
+
+    The output JSON contains all joint positions, velocities, and accelerations
+    at each timestep, so it can be loaded by a ROS node or similar system
+    without requiring the Fourier trajectory generation code.
+
+    Args:
+        trajectory: Sampled trajectory with time, position, velocity, acceleration.
+        path: Output file path.
+        condition_number: Condition number from optimization (for metadata).
+        source: Source file name (for metadata).
+    """
+    n_steps = len(trajectory.time)
+    n_joints = trajectory.position.shape[1]
+    duration = float(trajectory.time[-1] - trajectory.time[0])
+    dt = float(trajectory.time[1] - trajectory.time[0]) if n_steps > 1 else 0.0
+    fps = 1.0 / dt if dt > 0.0 else 0.0
+
+    metadata: dict = {
+        "description": "Sampled excitation trajectory for UR5e",
+        "num_joints": n_joints,
+        "num_steps": n_steps,
+        "duration": duration,
+        "fps": fps,
+        "dt": dt,
+        "joint_names": _UR5E_JOINT_NAMES[:n_joints],
+    }
+    if condition_number is not None:
+        metadata["condition_number"] = condition_number
+    if source is not None:
+        metadata["source"] = source
+
+    waypoints: list[dict] = []
+    for i in range(n_steps):
+        waypoints.append(
+            {
+                "t": round(float(trajectory.time[i]), 6),
+                "q": [round(float(v), 8) for v in trajectory.position[i]],
+                "dq": [round(float(v), 8) for v in trajectory.velocity[i]],
+                "ddq": [round(float(v), 8) for v in trajectory.acceleration[i]],
+            }
+        )
+
+    payload = {"metadata": metadata, "trajectory": waypoints}
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(payload, f, indent=2)

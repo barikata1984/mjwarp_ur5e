@@ -12,6 +12,7 @@ requires-python = ">=3.10"
 mjwarp-ur5e-load = "mjwarp_ur5e.demos.load_ur5e_mujoco:main"
 mjwarp-ur5e-inspect = "mjwarp_ur5e.demos.inspect_ur5e_mujoco:main"
 mjwarp-ur5e-render-home = "mjwarp_ur5e.demos.render_ur5e_home:main"
+mjwarp-ur5e-export-trajectory = "mjwarp_ur5e.demos.export_trajectory:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

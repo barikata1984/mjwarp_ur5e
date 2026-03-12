@@ -19,7 +19,12 @@ from .estimators import (
     RTLSConfig,
 )
 from .execution import PlaybackConfig, TrajectoryPlayback
-from .io import load_optimization_result, result_to_trajectory, save_optimization_result
+from .io import (
+    load_optimization_result,
+    result_to_trajectory,
+    save_optimization_result,
+    save_trajectory_json,
+)
 from .objective import condition_number_objective, evaluate_full_resolution
 from .optimizer import ExcitationOptimizer, OptimizationResult, OptimizerConfig
 from .regressor import (
@@ -89,6 +94,7 @@ __all__ = [
     "sample_body_kinematics",
     "sample_body_regressor",
     "save_optimization_result",
+    "save_trajectory_json",
     "set_model_state",
     "trajectory_subsample_indices",
 ]

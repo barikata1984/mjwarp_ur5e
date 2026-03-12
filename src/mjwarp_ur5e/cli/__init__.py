@@ -1,4 +1,5 @@
 from mjwarp_ur5e.cli.configs import (
+    ExportTrajectoryConfig,
     IdentificationDemoConfig,
     InspectConfig,
     LoadConfig,
@@ -13,6 +14,7 @@ from mjwarp_ur5e.cli.configs import (
 from mjwarp_ur5e.cli.yaml_config import apply_yaml_defaults, load_yaml
 
 __all__ = [
+    "ExportTrajectoryConfig",
     "IdentificationDemoConfig",
     "InspectConfig",
     "LoadConfig",
