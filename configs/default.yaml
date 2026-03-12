@@ -53,7 +53,7 @@ rendering:
   playback_speed: 1.0
 
 output:
-  optimization_result: "debug/excitation_result.json"
-  identification_result: "debug/identification_result.json"
-  playback_data: "debug/playback_data.npz"
-  video: "debug/excitation_playback.mp4"
+  optimization_result: "results/excitation_result.json"
+  identification_result: "results/identification_result.json"
+  playback_data: "results/playback_data.npz"
+  video: "results/excitation_playback.mp4"

@@ -24,7 +24,7 @@ class ModelConfig:
 class ResultInputConfig(ModelConfig):
     """Common fields for demos that read an optimization result."""
 
-    result_json: str = "debug/excitation_result.json"
+    result_json: str = "results/excitation_result.json"
 
 
 # ---------------------------------------------------------------------------
@@ -78,8 +78,8 @@ class OptimizeExcitationConfig(ModelConfig):
     max_displacement: float = 0.5
     enable_collision: bool = True
     enable_payload_workspace: bool = True
-    output: str = "debug/excitation_result.json"
-    trajectory_output: str = "debug/excitation_trajectory.json"
+    output: str = "results/excitation_result.json"
+    trajectory_output: str = "results/excitation_trajectory.json"
     trajectory_fps: float = 0.0
 
 
@@ -87,8 +87,8 @@ class OptimizeExcitationConfig(ModelConfig):
 class ExportTrajectoryConfig:
     """Config for exporting a sampled trajectory JSON from an optimization result."""
 
-    result_json: str = "debug/excitation_result.json"
-    output: str = "debug/excitation_trajectory.json"
+    result_json: str = "results/excitation_result.json"
+    output: str = "results/excitation_trajectory.json"
     fps: float = 0.0
 
 
@@ -111,7 +111,7 @@ class IdentificationDemoConfig(ResultInputConfig):
     estimator: str = "ls"  # "ls", "tls", or "rtls"
     noise_std: float = 0.0
     regularization: float = 0.0
-    output: str = "debug/identification_result.json"
+    output: str = "results/identification_result.json"
 
 
 @dataclass(slots=True)
@@ -120,14 +120,14 @@ class PlaybackDemoConfig(ResultInputConfig):
 
     use_pd: bool = False
     noise_std: float = 0.0
-    output: str = "debug/playback_data.npz"
+    output: str = "results/playback_data.npz"
 
 
 @dataclass(slots=True)
 class RenderPlaybackConfig(ResultInputConfig):
     """Config for rendering excitation trajectory playback."""
 
-    output: str = "debug/excitation_playback.mp4"
+    output: str = "results/excitation_playback.mp4"
     width: int = 960
     height: int = 544
     camera: str | None = None
@@ -138,4 +138,4 @@ class RenderPlaybackConfig(ResultInputConfig):
     multi_camera: bool = False
     grid_cameras: tuple[str, ...] = ("", "view_x", "view_y", "view_z")
     save_frames: bool = False
-    frames_dir: str = "debug/frames"
+    frames_dir: str = "results/frames"

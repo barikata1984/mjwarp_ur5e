@@ -16,12 +16,12 @@ def test_optimize_excitation_config_defaults() -> None:
     assert cfg.seed == 42
     assert cfg.max_displacement == 0.5
     assert cfg.enable_collision is True
-    assert cfg.output == "debug/excitation_result.json"
+    assert cfg.output == "results/excitation_result.json"
 
 
 def test_validate_excitation_config_defaults() -> None:
     cfg = ValidateExcitationConfig()
-    assert cfg.result_json == "debug/excitation_result.json"
+    assert cfg.result_json == "results/excitation_result.json"
     assert cfg.model == ""
 
 
