@@ -63,6 +63,21 @@ def reset_to_home(model: mujoco.MjModel, data: mujoco.MjData) -> bool:
     return True
 
 
+_DEFAULT_MODEL_PATH = "assets/ur5e/mjcf/scene_with_box.xml"
+
+
+def load_and_reset(model_path: str | None = None) -> LoadedModel:
+    """Load a UR5e model and reset to home position.
+
+    Convenience wrapper combining load_model + reset_to_home, used by all demos.
+    Falls back to the default scene_with_box.xml if no path is given.
+    """
+    resolved = model_path if model_path else _DEFAULT_MODEL_PATH
+    loaded = load_model(resolved)
+    reset_to_home(loaded.model, loaded.data)
+    return loaded
+
+
 def apply_joint_overrides(
     model: mujoco.MjModel, data: mujoco.MjData, overrides: dict[str, float]
 ) -> None:

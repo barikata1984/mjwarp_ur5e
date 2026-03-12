@@ -86,19 +86,11 @@ class BatchTotalLeastSquares:
 
         phi = -v[:-1] / v[-1]
 
-        cond = _condition_number(A)
-        residual = float(sv_for_residual[-1])
-        n_samples = A.shape[0]
+        from mjwarp_ur5e.identification.regressor import compute_condition_number
 
         return EstimationResult(
             phi=phi,
-            condition_number=cond,
-            residual_norm=residual,
-            n_samples=n_samples,
+            condition_number=compute_condition_number(A),
+            residual_norm=float(sv_for_residual[-1]),
+            n_samples=A.shape[0],
         )
-
-
-def _condition_number(A: np.ndarray) -> float:
-    from mjwarp_ur5e.identification.regressor import compute_condition_number
-
-    return compute_condition_number(A)

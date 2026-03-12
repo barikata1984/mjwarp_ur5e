@@ -26,7 +26,9 @@ class BaseTrajectory:
 
     @property
     def time(self) -> np.ndarray:
-        return self._time.copy()
+        view = self._time.view()
+        view.flags.writeable = False
+        return view
 
     @staticmethod
     def _build_time_array(duration: float, fps: float) -> np.ndarray:

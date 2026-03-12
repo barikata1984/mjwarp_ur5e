@@ -90,11 +90,10 @@ class ExcitationOptimizer:
             x[nj * nh + k * nj : nj * nh + (k + 1) * nj] = rng.uniform(-scale, scale, size=nj)
         return x
 
-    def optimize(self) -> OptimizationResult:
-        """Run multi-start optimisation and return the best result."""
+    def _build_cache_and_constraints(self) -> tuple[_TrajectoryCache, list[dict]]:
+        """Build trajectory cache and all scipy constraints from config."""
         cfg = self.config
         q0 = np.asarray(cfg.q0, dtype=np.float64)
-
         cache = _TrajectoryCache(
             num_joints=cfg.num_joints,
             num_harmonics=cfg.num_harmonics,
@@ -103,7 +102,6 @@ class ExcitationOptimizer:
             fps=cfg.fps,
             q0=q0,
         )
-
         constraints = build_scipy_constraints(
             cache,
             cfg.joint_limits,
@@ -114,15 +112,17 @@ class ExcitationOptimizer:
             payload_workspace_config=cfg.payload_workspace_config,
             payload_body_name=cfg.body_name,
         )
+        return cache, constraints
+
+    def optimize(self) -> OptimizationResult:
+        """Run multi-start optimisation and return the best result."""
+        cfg = self.config
+        q0 = np.asarray(cfg.q0, dtype=np.float64)
+        cache, constraints = self._build_cache_and_constraints()
 
         def objective(x: np.ndarray) -> float:
             return condition_number_objective(
-                x,
-                cache,
-                self.model,
-                self.data,
-                cfg.body_name,
-                cfg.subsample_factor,
+                x, cache, self.model, self.data, cfg.body_name, cfg.subsample_factor
             )
 
         rng = np.random.default_rng(cfg.seed)
@@ -140,10 +140,7 @@ class ExcitationOptimizer:
                 x0,
                 method=cfg.optimizer_method,
                 constraints=constraints,
-                options={
-                    "maxiter": cfg.max_iter_per_start,
-                    "ftol": cfg.ftol,
-                },
+                options={"maxiter": cfg.max_iter_per_start, "ftol": cfg.ftol},
             )
             total_evals += result.nfev
             cond = float(result.fun)
@@ -190,25 +187,7 @@ class ExcitationOptimizer:
             q0,
         )
 
-        cache_full = _TrajectoryCache(
-            num_joints=cfg.num_joints,
-            num_harmonics=cfg.num_harmonics,
-            base_freq=cfg.base_freq,
-            duration=cfg.duration,
-            fps=cfg.fps,
-            q0=q0,
-        )
-
-        full_constraints = build_scipy_constraints(
-            cache_full,
-            cfg.joint_limits,
-            workspace_config=cfg.workspace_config,
-            collision_config=cfg.collision_config,
-            model=self.model,
-            data=self.data,
-            payload_workspace_config=cfg.payload_workspace_config,
-            payload_body_name=cfg.body_name,
-        )
+        _, full_constraints = self._build_cache_and_constraints()
 
         margins: list[float] = []
         all_satisfied = True

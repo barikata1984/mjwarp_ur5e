@@ -1,0 +1,59 @@
+# Default configuration for UR5e optimal excitation trajectory pipeline.
+# Override any value via tyro CLI flags (e.g. --optimizer.max-iter-per-start 300).
+
+model:
+  path: "assets/ur5e/mjcf/scene_with_box.xml"
+  body_name: "payload_box_mount"
+  site_name: "attachment_site"
+
+trajectory:
+  num_joints: 6
+  num_harmonics: 5
+  base_freq: 0.1
+  duration: 10.0
+  fps: 100.0
+
+optimizer:
+  subsample_factor: 10
+  n_monte_carlo: 20
+  max_iter_per_start: 200
+  optimizer_method: "SLSQP"
+  ftol: 1.0e-6
+  seed: 42
+
+joint_limits:
+  q_min: [-6.2832, -6.2832, -6.2832, -6.2832, -6.2832, -6.2832]
+  q_max: [6.2832, 6.2832, 6.2832, 6.2832, 6.2832, 6.2832]
+  dq_max: [3.1416, 3.1416, 3.1416, 6.2832, 6.2832, 6.2832]
+  ddq_max: [8.0, 8.0, 8.0, 8.0, 8.0, 8.0]
+
+workspace:
+  max_displacement: 0.5
+  safety_margin: 0.01
+
+collision:
+  ground_z_min: 0.01
+  self_collision_min_dist: 0.02
+  self_collision_radii: [0.06, 0.05, 0.045, 0.035, 0.035, 0.03]
+  safety_margin: 0.05
+
+playback:
+  dt: 0.002
+  use_pd_control: false
+  noise_std_q: 0.0
+  noise_std_dq: 0.0
+  noise_std_wrench: 0.0
+
+rendering:
+  width: 960
+  height: 544
+  fps_video: 30
+  show_ee_frame: true
+  axis_length: 0.15
+  playback_speed: 1.0
+
+output:
+  optimization_result: "debug/excitation_result.json"
+  identification_result: "debug/identification_result.json"
+  playback_data: "debug/playback_data.npz"
+  video: "debug/excitation_playback.mp4"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import mujoco
 import numpy as np
@@ -11,6 +12,10 @@ from mjwarp_ur5e.trajectories.windowed_fourier import (
     WindowedFourierTrajectory,
     WindowedFourierTrajectoryConfig,
 )
+
+if TYPE_CHECKING:
+    from mjwarp_ur5e.identification.collision import CollisionConfig
+    from mjwarp_ur5e.identification.workspace import WorkspaceConstraintConfig
 
 
 @dataclass(frozen=True)
@@ -141,42 +146,30 @@ def make_joint_acceleration_constraint(
 def build_scipy_constraints(
     cache: _TrajectoryCache,
     joint_limits: JointLimits,
-    workspace_config: object | None = None,
-    collision_config: object | None = None,
+    workspace_config: WorkspaceConstraintConfig | None = None,
+    collision_config: CollisionConfig | None = None,
     model: mujoco.MjModel | None = None,
     data: mujoco.MjData | None = None,
-    payload_workspace_config: object | None = None,
+    payload_workspace_config: WorkspaceConstraintConfig | None = None,
     payload_body_name: str = "payload_box_mount",
 ) -> list[dict]:
     """Assemble all constraints in scipy.optimize format."""
     from mjwarp_ur5e.identification.collision import (
         CollisionChecker,
-        CollisionConfig,
         make_collision_constraint,
     )
     from mjwarp_ur5e.identification.workspace import (
-        WorkspaceConstraintConfig,
         make_payload_workspace_constraint,
         make_workspace_constraint,
     )
 
     constraints: list[dict] = [
-        {
-            "type": "ineq",
-            "fun": make_joint_position_constraint(cache, joint_limits),
-        },
-        {
-            "type": "ineq",
-            "fun": make_joint_velocity_constraint(cache, joint_limits),
-        },
-        {
-            "type": "ineq",
-            "fun": make_joint_acceleration_constraint(cache, joint_limits),
-        },
+        {"type": "ineq", "fun": make_joint_position_constraint(cache, joint_limits)},
+        {"type": "ineq", "fun": make_joint_velocity_constraint(cache, joint_limits)},
+        {"type": "ineq", "fun": make_joint_acceleration_constraint(cache, joint_limits)},
     ]
 
     if workspace_config is not None and model is not None and data is not None:
-        assert isinstance(workspace_config, WorkspaceConstraintConfig)
         constraints.append(
             {
                 "type": "ineq",
@@ -185,7 +178,6 @@ def build_scipy_constraints(
         )
 
     if payload_workspace_config is not None and model is not None and data is not None:
-        assert isinstance(payload_workspace_config, WorkspaceConstraintConfig)
         constraints.append(
             {
                 "type": "ineq",
@@ -196,13 +188,7 @@ def build_scipy_constraints(
         )
 
     if collision_config is not None and model is not None and data is not None:
-        assert isinstance(collision_config, CollisionConfig)
         checker = CollisionChecker(model, data, collision_config)
-        constraints.append(
-            {
-                "type": "ineq",
-                "fun": make_collision_constraint(cache, checker),
-            }
-        )
+        constraints.append({"type": "ineq", "fun": make_collision_constraint(cache, checker)})
 
     return constraints

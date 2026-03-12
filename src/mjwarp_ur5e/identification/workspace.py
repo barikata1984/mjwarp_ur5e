@@ -79,20 +79,23 @@ def make_box_workspace_constraint(
     site_name: str = "attachment_site",
 ) -> Callable[[np.ndarray], float]:
     """Return f(x)->float >= 0 iff EE stays within box bounds."""
+    # Hoist static array conversions out of the hot loop
+    lower = (
+        np.asarray(workspace_config.box_lower, dtype=np.float64)
+        if workspace_config.box_lower is not None
+        else None
+    )
+    upper = (
+        np.asarray(workspace_config.box_upper, dtype=np.float64)
+        if workspace_config.box_upper is not None
+        else None
+    )
+    margin = workspace_config.safety_margin
 
     def constraint(x: np.ndarray) -> float:
         sample = cache.get(x)
         positions = _evaluate_workspace_positions(model, data, sample.position, site_name)
-        margins = []
-        if workspace_config.box_lower is not None:
-            lower = np.asarray(workspace_config.box_lower)
-            margins.append(float(np.min(positions - lower)) - workspace_config.safety_margin)
-        if workspace_config.box_upper is not None:
-            upper = np.asarray(workspace_config.box_upper)
-            margins.append(float(np.min(upper - positions)) - workspace_config.safety_margin)
-        if not margins:
-            return 0.0
-        return float(np.min(margins))
+        return _compute_box_margin(positions, lower, upper, margin)
 
     return constraint
 
@@ -154,6 +157,23 @@ def _evaluate_payload_vertices(
     return world_verts
 
 
+def _compute_box_margin(
+    points: np.ndarray,
+    lower: np.ndarray | None,
+    upper: np.ndarray | None,
+    safety_margin: float,
+) -> float:
+    """Compute minimum margin of points (N, 3) against optional box bounds."""
+    margins: list[float] = []
+    if lower is not None:
+        margins.append(float(np.min(points - lower)) - safety_margin)
+    if upper is not None:
+        margins.append(float(np.min(upper - points)) - safety_margin)
+    if not margins:
+        return 0.0
+    return float(np.min(margins))
+
+
 def make_payload_workspace_constraint(
     cache: _TrajectoryCache,
     workspace_config: WorkspaceConstraintConfig,
@@ -162,22 +182,22 @@ def make_payload_workspace_constraint(
     body_name: str = "payload_box_mount",
 ) -> Callable[[np.ndarray], float]:
     """Return f(x)->float >= 0 iff all payload geom vertices stay within box bounds."""
+    lower = (
+        np.asarray(workspace_config.box_lower, dtype=np.float64)
+        if workspace_config.box_lower is not None
+        else None
+    )
+    upper = (
+        np.asarray(workspace_config.box_upper, dtype=np.float64)
+        if workspace_config.box_upper is not None
+        else None
+    )
+    margin = workspace_config.safety_margin
 
     def constraint(x: np.ndarray) -> float:
         sample = cache.get(x)
-        # (n_steps, 8, 3)
         verts = _evaluate_payload_vertices(model, data, sample.position, body_name)
-        # Flatten to (n_steps*8, 3) for bounds check
         pts = verts.reshape(-1, 3)
-        margins: list[float] = []
-        if workspace_config.box_lower is not None:
-            lower = np.asarray(workspace_config.box_lower)
-            margins.append(float(np.min(pts - lower)) - workspace_config.safety_margin)
-        if workspace_config.box_upper is not None:
-            upper = np.asarray(workspace_config.box_upper)
-            margins.append(float(np.min(upper - pts)) - workspace_config.safety_margin)
-        if not margins:
-            return 0.0
-        return float(np.min(margins))
+        return _compute_box_margin(pts, lower, upper, margin)
 
     return constraint

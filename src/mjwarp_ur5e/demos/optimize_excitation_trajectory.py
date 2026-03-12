@@ -11,26 +11,18 @@ from mjwarp_ur5e.identification.collision import CollisionConfig
 from mjwarp_ur5e.identification.io import save_optimization_result
 from mjwarp_ur5e.identification.optimizer import ExcitationOptimizer, OptimizerConfig
 from mjwarp_ur5e.identification.workspace import WorkspaceConstraintConfig
-from mjwarp_ur5e.model import get_named_object_id, load_model, reset_to_home
+from mjwarp_ur5e.model import get_named_object_id, load_and_reset
 
 
 def main() -> None:
     config = tyro.cli(OptimizeExcitationConfig)
 
-    model_path = config.model if config.model else None
-    if model_path is None:
-        model_path = "assets/ur5e/mjcf/scene_with_box.xml"
-
-    loaded = load_model(model_path)
-    reset_to_home(loaded.model, loaded.data)
-
+    loaded = load_and_reset(config.model or None)
     q0 = np.array(loaded.data.qpos[: loaded.model.nq], dtype=np.float64)
 
     workspace_config: WorkspaceConstraintConfig | None = None
     if config.max_displacement > 0:
-        workspace_config = WorkspaceConstraintConfig(
-            max_displacement=config.max_displacement,
-        )
+        workspace_config = WorkspaceConstraintConfig(max_displacement=config.max_displacement)
 
     collision_config: CollisionConfig | None = None
     if config.enable_collision:
@@ -38,13 +30,11 @@ def main() -> None:
 
     payload_workspace_config: WorkspaceConstraintConfig | None = None
     if config.enable_payload_workspace:
-        # Extract workspace box bounds from the workspace_region geom in the model
         geom_id = get_named_object_id(
             loaded.model, mujoco.mjtObj.mjOBJ_GEOM, "workspace_region_geom"
         )
         if geom_id is not None:
             body_id = loaded.model.geom_bodyid[geom_id]
-            # Use data.xpos (world frame), not model.body_pos (parent-local frame)
             mujoco.mj_kinematics(loaded.model, loaded.data)
             center = loaded.data.xpos[body_id].copy()
             half = loaded.model.geom_size[geom_id].copy()
@@ -52,8 +42,7 @@ def main() -> None:
             box_upper = center + half
             print(f"  payload workspace bounds: {box_lower} .. {box_upper}")
             payload_workspace_config = WorkspaceConstraintConfig(
-                box_lower=box_lower,
-                box_upper=box_upper,
+                box_lower=box_lower, box_upper=box_upper
             )
 
     opt_config = OptimizerConfig(
@@ -72,11 +61,7 @@ def main() -> None:
         payload_workspace_config=payload_workspace_config,
     )
 
-    optimizer = ExcitationOptimizer(
-        config=opt_config,
-        model=loaded.model,
-        data=loaded.data,
-    )
+    optimizer = ExcitationOptimizer(config=opt_config, model=loaded.model, data=loaded.data)
 
     print("Starting excitation trajectory optimization...")
     print(f"  harmonics={config.num_harmonics}, duration={config.duration}s")

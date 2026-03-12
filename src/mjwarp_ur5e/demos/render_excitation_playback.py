@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import dataclasses
 from pathlib import Path
 
 import imageio.v3 as iio
@@ -10,29 +9,10 @@ import mujoco
 import numpy as np
 import tyro
 
+from mjwarp_ur5e.cli import RenderPlaybackConfig
 from mjwarp_ur5e.identification.io import load_optimization_result, result_to_trajectory
-from mjwarp_ur5e.model import load_model, reset_to_home
+from mjwarp_ur5e.model import load_and_reset
 from mjwarp_ur5e.rendering import add_ee_frame_overlay
-
-
-@dataclasses.dataclass
-class RenderPlaybackConfig:
-    """Configuration for rendering excitation trajectory playback."""
-
-    result_json: str = "debug/excitation_result.json"
-    model: str = ""
-    output: str = "debug/excitation_playback.mp4"
-    width: int = 960
-    height: int = 544
-    camera: str | None = None
-    fps_video: int = 30
-    show_ee_frame: bool = True
-    axis_length: float = 0.15
-    playback_speed: float = 1.0
-    multi_camera: bool = False
-    grid_cameras: tuple[str, ...] = ("", "view_x", "view_y", "view_z")
-    save_frames: bool = False
-    frames_dir: str = "debug/frames"
 
 
 def _render_single_view(
@@ -58,7 +38,6 @@ def _render_single_view(
 def main() -> None:
     config = tyro.cli(RenderPlaybackConfig)
 
-    # Load optimization result
     print(f"Loading result from {config.result_json}")
     result = load_optimization_result(config.result_json)
     trajectory = result_to_trajectory(result)
@@ -67,18 +46,13 @@ def main() -> None:
     n_steps = len(trajectory.time)
     print(f"Trajectory: {n_steps} steps, {duration:.1f}s, {traj_fps:.0f} fps")
 
-    # Load model
-    model_path = config.model if config.model else "assets/ur5e/mjcf/scene_with_box.xml"
-    loaded = load_model(model_path)
-    reset_to_home(loaded.model, loaded.data)
+    loaded = load_and_reset(config.model or None)
     model, data = loaded.model, loaded.data
 
-    # Setup renderer
     tile_w = min(config.width, int(model.vis.global_.offwidth))
     tile_h = min(config.height, int(model.vis.global_.offheight))
     renderer = mujoco.Renderer(model, height=tile_h, width=tile_w)
 
-    # Determine camera list for multi-camera mode
     if config.multi_camera:
         cameras: list[str | None] = [(c if c else None) for c in config.grid_cameras]
         while len(cameras) < 4:
@@ -90,7 +64,6 @@ def main() -> None:
             f"tile={tile_w}x{tile_h}, grid={tile_w * 2}x{tile_h * 2}"
         )
 
-    # Prepare per-camera frame directories
     frame_dirs: dict[str, Path] = {}
     if config.save_frames and config.multi_camera:
         base_dir = Path(config.frames_dir)
@@ -108,7 +81,6 @@ def main() -> None:
         frame_dirs[label] = cam_dir
         print(f"Saving frames to {cam_dir}/")
 
-    # Compute frame sampling
     video_fps = config.fps_video
     speed = config.playback_speed
     video_duration = duration / speed
@@ -145,12 +117,7 @@ def main() -> None:
             frames.append(grid)
         else:
             image = _render_single_view(
-                renderer,
-                model,
-                data,
-                config.camera,
-                config.show_ee_frame,
-                config.axis_length,
+                renderer, model, data, config.camera, config.show_ee_frame, config.axis_length
             )
             frames.append(image)
             if config.save_frames:
@@ -164,16 +131,10 @@ def main() -> None:
 
     renderer.close()
 
-    # Write video from saved frames or in-memory frames
     output_path = Path(config.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     video_array = np.stack(frames)
-    iio.imwrite(
-        str(output_path),
-        video_array,
-        fps=video_fps,
-        macro_block_size=1,
-    )
+    iio.imwrite(str(output_path), video_array, fps=video_fps, macro_block_size=1)
     print(f"\nVideo saved to {output_path} ({output_path.stat().st_size / 1024:.0f} KB)")
 
     if config.save_frames:

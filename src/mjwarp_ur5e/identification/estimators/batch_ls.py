@@ -51,20 +51,11 @@ class BatchLeastSquares:
         else:
             phi, _, _, _ = np.linalg.lstsq(A, y, rcond=None)
 
-        cond = _condition_number(A)
-        residual = float(np.linalg.norm(y - A @ phi))
-        n_samples = A.shape[0]
+        from mjwarp_ur5e.identification.regressor import compute_condition_number
 
         return EstimationResult(
             phi=phi,
-            condition_number=cond,
-            residual_norm=residual,
-            n_samples=n_samples,
+            condition_number=compute_condition_number(A),
+            residual_norm=float(np.linalg.norm(y - A @ phi)),
+            n_samples=A.shape[0],
         )
-
-
-def _condition_number(A: np.ndarray) -> float:
-    """Condition number from singular values of A."""
-    from mjwarp_ur5e.identification.regressor import compute_condition_number
-
-    return compute_condition_number(A)

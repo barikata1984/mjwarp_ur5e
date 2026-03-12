@@ -4,31 +4,18 @@ import numpy as np
 import tyro
 
 from mjwarp_ur5e.cli import ValidateExcitationConfig
-from mjwarp_ur5e.identification.io import (
-    load_optimization_result,
-    result_to_trajectory,
-)
+from mjwarp_ur5e.identification.io import load_optimization_result, result_to_trajectory
 from mjwarp_ur5e.identification.optimizer import ExcitationOptimizer
-from mjwarp_ur5e.model import load_model, reset_to_home
+from mjwarp_ur5e.model import load_and_reset
 
 
 def main() -> None:
     config = tyro.cli(ValidateExcitationConfig)
 
     result = load_optimization_result(config.result_json)
+    loaded = load_and_reset(config.model or None)
 
-    model_path = config.model if config.model else None
-    if model_path is None:
-        model_path = "assets/ur5e/mjcf/scene_with_box.xml"
-
-    loaded = load_model(model_path)
-    reset_to_home(loaded.model, loaded.data)
-
-    optimizer = ExcitationOptimizer(
-        config=result.config,
-        model=loaded.model,
-        data=loaded.data,
-    )
+    optimizer = ExcitationOptimizer(config=result.config, model=loaded.model, data=loaded.data)
 
     print(f"Validating: {config.result_json}")
     report = optimizer.validate_trajectory(result)
