@@ -12,10 +12,20 @@ from mjwarp_ur5e.model import get_named_object_id
 class FramePose:
     name: str
     position: tuple[float, float, float]
-    rotation: tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]
+    rotation: tuple[
+        tuple[float, float, float],
+        tuple[float, float, float],
+        tuple[float, float, float],
+    ]
 
 
-def _rotation_tuple(matrix: np.ndarray) -> tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]:
+def _rotation_tuple(
+    matrix: np.ndarray,
+) -> tuple[
+    tuple[float, float, float],
+    tuple[float, float, float],
+    tuple[float, float, float],
+]:
     return tuple(tuple(float(value) for value in row) for row in matrix)  # type: ignore[return-value]
 
 

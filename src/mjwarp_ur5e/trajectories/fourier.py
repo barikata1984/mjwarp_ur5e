@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -78,9 +78,10 @@ class FourierTrajectory(BaseTrajectory):
         velocity = (cos_phase * angular_frequency) @ self.coefficients.a.T - (
             sin_phase * angular_frequency
         ) @ self.coefficients.b.T
-        acceleration = -(sin_phase * angular_frequency**2) @ self.coefficients.a.T - (
-            cos_phase * angular_frequency**2
-        ) @ self.coefficients.b.T
+        acceleration = (
+            -(sin_phase * angular_frequency**2) @ self.coefficients.a.T
+            - (cos_phase * angular_frequency**2) @ self.coefficients.b.T
+        )
 
         return TrajectorySample(
             time=self.time,

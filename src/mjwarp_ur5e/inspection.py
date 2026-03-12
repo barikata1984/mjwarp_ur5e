@@ -30,6 +30,7 @@ class UR5eInspectionResult:
         payload["model_path"] = str(self.model_path)
         return payload
 
+
 def inspect_ur5e_model(model_path: str | Path | None = None) -> UR5eInspectionResult:
     loaded_model = load_model(model_path)
     model = loaded_model.model

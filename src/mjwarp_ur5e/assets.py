@@ -42,6 +42,5 @@ def resolve_ur5e_model_path(model_path: str | Path | None = None) -> Path:
 
     searched = "\n".join(f"- {path}" for path in get_default_ur5e_model_candidates())
     raise FileNotFoundError(
-        "No UR5e model asset found. Place one of the following files:\n"
-        f"{searched}"
+        f"No UR5e model asset found. Place one of the following files:\n{searched}"
     )

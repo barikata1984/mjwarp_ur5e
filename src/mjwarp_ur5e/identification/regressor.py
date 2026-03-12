@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import mujoco
 import numpy as np
 
@@ -78,7 +76,9 @@ def rigid_body_wrench_regressor(kinematics: BodyKinematics) -> np.ndarray:
     for column_index, basis_vector in enumerate(basis_vectors):
         spatial_inertia = _spatial_inertia_matrix_from_vector(basis_vector)
         spatial_momentum = spatial_inertia @ spatial_velocity
-        regressor[:, column_index] = spatial_inertia @ spatial_acceleration + cross_force @ spatial_momentum
+        regressor[:, column_index] = (
+            spatial_inertia @ spatial_acceleration + cross_force @ spatial_momentum
+        )
 
     return regressor
 
@@ -107,10 +107,14 @@ def body_inertial_parameters_from_model(
 
     inertia_diag = np.array(model.body_inertia[body_id], dtype=np.float64)
     inertia_com_inertial = np.diag(inertia_diag)
-    inertial_rotation = _quat_to_rotation_matrix(np.array(model.body_iquat[body_id], dtype=np.float64))
+    inertial_rotation = _quat_to_rotation_matrix(
+        np.array(model.body_iquat[body_id], dtype=np.float64)
+    )
     inertia_com_body = inertial_rotation @ inertia_com_inertial @ inertial_rotation.T
 
-    parallel_axis = mass * ((com_body @ com_body) * np.eye(3, dtype=np.float64) - np.outer(com_body, com_body))
+    parallel_axis = mass * (
+        (com_body @ com_body) * np.eye(3, dtype=np.float64) - np.outer(com_body, com_body)
+    )
     inertia_origin_body = inertia_com_body + parallel_axis
 
     return InertialParameters(

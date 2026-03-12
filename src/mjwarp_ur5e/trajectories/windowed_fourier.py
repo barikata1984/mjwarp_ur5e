@@ -44,7 +44,9 @@ class WindowedFourierTrajectory:
         window, d_window_dt, dd_window_dt2 = self._window.scalar_profile()
 
         position = self._base + window[:, None] * oscillation.position
-        velocity = d_window_dt[:, None] * oscillation.position + window[:, None] * oscillation.velocity
+        velocity = (
+            d_window_dt[:, None] * oscillation.position + window[:, None] * oscillation.velocity
+        )
         acceleration = (
             dd_window_dt2[:, None] * oscillation.position
             + 2.0 * d_window_dt[:, None] * oscillation.velocity

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+
 import tyro
 
 from mjwarp_ur5e.cli import InspectConfig
@@ -30,10 +31,7 @@ def main() -> None:
     print("End effector:")
     print(f"- site: {result.end_effector.site_name}")
     print(f"- body: {result.end_effector.body_name}")
-    print(
-        "- position: "
-        + ", ".join(f"{value:.4f}" for value in result.end_effector.position)
-    )
+    print("- position: " + ", ".join(f"{value:.4f}" for value in result.end_effector.position))
 
 
 if __name__ == "__main__":

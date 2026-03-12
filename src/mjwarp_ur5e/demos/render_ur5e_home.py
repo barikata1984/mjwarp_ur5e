@@ -5,6 +5,7 @@ import tyro
 from mjwarp_ur5e.cli import RenderConfig
 from mjwarp_ur5e.rendering import RenderSceneRequest, parse_joint_overrides, render_scene
 
+
 def main() -> None:
     config = tyro.cli(RenderConfig)
     joint_overrides = parse_joint_overrides(config.set_joint)

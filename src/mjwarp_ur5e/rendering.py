@@ -54,13 +54,17 @@ def resolve_output_path(output_path: str | Path | None) -> Path:
     return candidate.resolve()
 
 
-def resolve_render_size(model: mujoco.MjModel, requested_width: int, requested_height: int) -> tuple[int, int]:
+def resolve_render_size(
+    model: mujoco.MjModel, requested_width: int, requested_height: int
+) -> tuple[int, int]:
     width = min(requested_width, int(model.vis.global_.offwidth))
     height = min(requested_height, int(model.vis.global_.offheight))
     return width, height
 
 
-def _add_connector(scene: mujoco.MjvScene, from_point: np.ndarray, to_point: np.ndarray, rgba: np.ndarray) -> None:
+def _add_connector(
+    scene: mujoco.MjvScene, from_point: np.ndarray, to_point: np.ndarray, rgba: np.ndarray
+) -> None:
     geom = scene.geoms[scene.ngeom]
     mujoco.mjv_initGeom(
         geom,
@@ -74,7 +78,12 @@ def _add_connector(scene: mujoco.MjvScene, from_point: np.ndarray, to_point: np.
     scene.ngeom += 1
 
 
-def _add_frame_overlay(scene: mujoco.MjvScene, frame: FramePose | None, axis_length: float, colors: tuple[np.ndarray, np.ndarray, np.ndarray]) -> None:
+def _add_frame_overlay(
+    scene: mujoco.MjvScene,
+    frame: FramePose | None,
+    axis_length: float,
+    colors: tuple[np.ndarray, np.ndarray, np.ndarray],
+) -> None:
     if frame is None:
         return
 
@@ -85,7 +94,9 @@ def _add_frame_overlay(scene: mujoco.MjvScene, frame: FramePose | None, axis_len
         _add_connector(scene, origin, origin + axis_length * direction, color)
 
 
-def add_base_frame_overlay(model: mujoco.MjModel, data: mujoco.MjData, scene: mujoco.MjvScene, axis_length: float) -> None:
+def add_base_frame_overlay(
+    model: mujoco.MjModel, data: mujoco.MjData, scene: mujoco.MjvScene, axis_length: float
+) -> None:
     colors = (
         np.array([1.0, 0.1, 0.1, 1.0], dtype=np.float32),
         np.array([0.1, 1.0, 0.1, 1.0], dtype=np.float32),
@@ -94,16 +105,21 @@ def add_base_frame_overlay(model: mujoco.MjModel, data: mujoco.MjData, scene: mu
     _add_frame_overlay(scene, get_body_frame(model, data, "base"), axis_length, colors)
 
 
-def add_ee_frame_overlay(model: mujoco.MjModel, data: mujoco.MjData, scene: mujoco.MjvScene, axis_length: float) -> None:
+def add_ee_frame_overlay(
+    model: mujoco.MjModel, data: mujoco.MjData, scene: mujoco.MjvScene, axis_length: float
+) -> None:
     colors = (
         np.array([1.0, 0.4, 0.4, 1.0], dtype=np.float32),
         np.array([0.4, 1.0, 0.4, 1.0], dtype=np.float32),
         np.array([0.4, 0.7, 1.0, 1.0], dtype=np.float32),
     )
-    _add_frame_overlay(scene, get_site_frame(model, data, "attachment_site"), axis_length, colors)
+    frame = get_site_frame(model, data, "attachment_site")
+    _add_frame_overlay(scene, frame, axis_length, colors)
 
 
-def build_render_metadata(loaded_model: LoadedModel, joint_overrides: dict[str, float]) -> dict[str, object]:
+def build_render_metadata(
+    loaded_model: LoadedModel, joint_overrides: dict[str, float]
+) -> dict[str, object]:
     model = loaded_model.model
     data = loaded_model.data
     ee_frame = get_site_frame(model, data, "attachment_site")
@@ -135,9 +151,13 @@ def render_scene(request: RenderSceneRequest) -> tuple[Path, Path]:
         renderer.update_scene(loaded_model.data, camera=request.camera)
 
     if request.show_base_frame:
-        add_base_frame_overlay(loaded_model.model, loaded_model.data, renderer.scene, request.axis_length)
+        add_base_frame_overlay(
+            loaded_model.model, loaded_model.data, renderer.scene, request.axis_length
+        )
     if request.show_ee_frame:
-        add_ee_frame_overlay(loaded_model.model, loaded_model.data, renderer.scene, request.axis_length)
+        add_ee_frame_overlay(
+            loaded_model.model, loaded_model.data, renderer.scene, request.axis_length
+        )
 
     image = renderer.render()
     iio.imwrite(output_path, image)

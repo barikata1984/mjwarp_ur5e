@@ -27,7 +27,9 @@ def step_model(model: mujoco.MjModel, data: mujoco.MjData, steps: int) -> None:
         mujoco.mj_step(model, data)
 
 
-def get_object_names(model: mujoco.MjModel, object_type: mujoco.mjtObj, count: int) -> tuple[str, ...]:
+def get_object_names(
+    model: mujoco.MjModel, object_type: mujoco.mjtObj, count: int
+) -> tuple[str, ...]:
     names: list[str] = []
     for index in range(count):
         name = mujoco.mj_id2name(model, object_type, index)
@@ -61,7 +63,9 @@ def reset_to_home(model: mujoco.MjModel, data: mujoco.MjData) -> bool:
     return True
 
 
-def apply_joint_overrides(model: mujoco.MjModel, data: mujoco.MjData, overrides: dict[str, float]) -> None:
+def apply_joint_overrides(
+    model: mujoco.MjModel, data: mujoco.MjData, overrides: dict[str, float]
+) -> None:
     for joint_name, joint_value in overrides.items():
         joint_id = get_named_object_id(model, mujoco.mjtObj.mjOBJ_JOINT, joint_name)
         if joint_id is None:
