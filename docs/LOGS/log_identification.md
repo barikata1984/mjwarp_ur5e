@@ -62,3 +62,34 @@ base parameter 化は不要であることを確認。
 - `-> callable` → `-> Callable[[np.ndarray], float]` 型修正
 - `model: object` → `model: mujoco.MjModel` 型修正
 - キャッシュの `hash(bytes)` → バイト列直接比較で衝突リスク排除
+
+## 2026-03-12: 最適励起軌道の生成と MuJoCo 再生動画
+
+### 実施内容
+
+実装したパイプライン全体を通して最適励起軌道を生成し、MuJoCo 上で再生した動画を出力した。
+
+### 最適化設定
+
+- harmonics=3, duration=5.0s, fps=50
+- 3 Monte Carlo restarts, 50 iter/start
+- workspace constraint: max_displacement=0.5m
+- collision constraint: enabled
+
+### 結果
+
+| 指標 | 値 |
+|------|------|
+| 条件数 | **2.64** |
+| 計算時間 | 110.8s |
+| 評価回数 | 5791 |
+| best start | 1 |
+
+### 出力
+
+- `debug/excitation_result.json` — 最適化結果 (係数、config)
+- `debug/excitation_playback.mp4` — MuJoCo 再生動画 (5s, 30fps, 150 frames)
+
+### 追加スクリプト
+
+- `demos/render_excitation_playback.py` — 最適化結果 JSON → MuJoCo レンダリング → mp4 動画生成 CLI
