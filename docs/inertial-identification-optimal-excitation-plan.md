@@ -94,6 +94,7 @@
 - `src/mjwarp_ur5e/demos/`
   - 最適化実行 CLI
   - 軌道検証 CLI
+  - 軌道JSON出力 CLI（実機再生用サンプリング済み軌道のエクスポート）
 - `tests/`
   - 軌道生成、制約、最適化、回帰行列構築、JSON 入出力のテスト
 - `docs/`

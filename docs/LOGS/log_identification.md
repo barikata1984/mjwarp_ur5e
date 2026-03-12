@@ -241,3 +241,52 @@ clearance = ||local - closest|| - sphere_radius
 
 - 92/92 テストパス
 - ruff lint / format クリーン
+
+---
+
+## 2026-03-12: 最適軌道のサンプリング済みJSON出力
+
+### 目的
+
+最適化結果のフーリエ係数JSONでは、軌道再生にフーリエ軌道生成コードが必要となる。
+ROSノード等の外部システムから直接再生可能な、各タイムステップの関節状態を記述した
+自己完結型JSONを出力する機能を追加した。
+
+### 主な変更
+
+#### `save_trajectory_json()` — `identification/io.py`
+- `TrajectorySample` を受け取り、各ステップの `t`, `q`, `dq`, `ddq` をJSON出力
+- メタデータに `fps`, `dt`, `joint_names`, `condition_number` を記録
+- ROS側は `metadata.dt` の制御周期で `trajectory[i].q` を順次送信するだけで再生可能
+
+#### `result_to_trajectory()` のfpsオーバーライド対応
+- `fps` 引数を追加。フーリエ表現から任意のレートで解析的に再サンプリング可能
+
+#### `export_trajectory` CLIコマンド — `demos/export_trajectory.py`
+- 既存の最適化結果JSONから軌道JSONへの変換コマンド
+- `--fps` フラグで出力サンプリングレートを指定可能
+
+#### 最適化完了時の自動出力
+- `optimize_excitation_trajectory.py` の完了時に軌道JSONを自動生成
+- `--trajectory-fps`, `--trajectory-output` フラグで制御
+
+#### 出力ディレクトリ
+- `results/` ディレクトリを新設し、軌道JSON出力を格納
+
+### 出力JSONの構造
+
+```json
+{
+  "metadata": {"fps": 100.0, "dt": 0.01, "joint_names": [...], ...},
+  "trajectory": [
+    {"t": 0.0, "q": [...], "dq": [...], "ddq": [...]},
+    ...
+  ]
+}
+```
+
+### 検証結果
+
+- 92/92 テストパス
+- ruff lint / format クリーン
+- 100Hz (101 steps) および 50Hz (51 steps) での出力を確認

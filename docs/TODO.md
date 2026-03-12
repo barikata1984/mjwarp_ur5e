@@ -10,6 +10,7 @@
 - [x] フェーズ 3: 制約評価レイヤの実装 (`constraints.py`, `collision.py`, `workspace.py`)
 - [x] フェーズ 4: 最適化エンジンの実装 (`optimizer.py`, `objective.py`, `io.py`)
 - [x] フェーズ 5: CLI とユーザー導線の整備
+- [x] フェーズ 5+: 実機再生用サンプリング済み軌道JSON出力 (`export_trajectory` CLI)
 - [x] フェーズ 6: MuJoCo 上での軌道再生と計測基盤 (`execution.py`, `data_buffer.py`)
 - [x] フェーズ 7: 慣性推定器との接続 (LS / TLS / RTLS)
 - [x] フェーズ 8: Warp 導入と高速化
