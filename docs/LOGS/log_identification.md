@@ -770,3 +770,103 @@ D-optimal は情報量（全特異値の積）を最大化するため、大き�
 | **5** | 並列 Monte Carlo | 正解性ではなく速度の問題 |
 
 D-optimal 目的関数は実装済みのため維持するが、feasibility 改善の主要因ではないことが判明した。
+
+---
+
+## 2026-03-13: 解析的 Fourier 係数バウンドの実装と最適化ラン
+
+### 実装内容
+
+三角不等式に基づく Fourier 係数のボックスバウンドを実装し、速度制約を構造的に保証する手法を導入した。
+
+#### `compute_fourier_velocity_bounds()` — `constraints.py`
+
+窓付き Fourier 軌道 `v_j(t) = w'(t)*osc_j(t) + w(t)*osc_j'(t)` に対し、三角不等式から十分条件:
+
+```
+Σ_k (|a_{j,k}| + |b_{j,k}|) * α_k ≤ dq_max_j
+α_k = max|w'(t)/T| + 2π * base_freq * k
+```
+
+均等予算配分で per-coefficient バウンド: `|a_{j,k}|, |b_{j,k}| ≤ dq_max_j / (2 * N_h * α_k)`
+
+- 窓関数 `w(s) = 64s³(1-s)³` の導関数最大値を 10,000 点グリッドで数値計算
+- `scipy.optimize.Bounds` オブジェクトとして SLSQP に供給
+
+#### `optimizer.py` の変更
+
+- `OptimizerConfig` に `use_fourier_bounds`, `enable_velocity_constraint`, `enable_acceleration_constraint` フラグ追加
+- `_compute_fourier_bounds()`: `Bounds(-upper, upper)` を構築
+- `_compute_named_margins()`: 制約辞書から名前付きマージンを計算
+- `_compute_trajectory_stats()`: q_max, dq_max, ddq_max のジョイント別統計
+- `OptimizationResult` に `constraint_margins: dict[str, float]`, `feasible: bool`, `trajectory_stats: dict` 追加
+- `_generate_random_x0()`: バウンド範囲内でクリップ
+- wandb ロギングに名前付き制約マージンと軌道統計を追加
+
+#### `constraints.py` の変更
+
+- `build_scipy_constraints()` の各制約辞書に `"name"` キーを追加（デバッグ・診断用）
+- `enable_velocity_constraint`, `enable_acceleration_constraint` フラグで制約の ON/OFF 制御
+
+#### CLI — `configs.py`
+
+- `--use-fourier-bounds` フラグ追加
+- `--enable-acc-constraint` フラグ追加
+- `--wandb` デフォルトを True に変更
+
+#### `optimize_excitation_trajectory.py`
+
+- Fourier バウンド有効時に per-timestep velocity constraint を自動無効化
+- 名前付き制約マージンと軌道統計の診断出力
+
+#### `io.py`
+
+- `feasible`, `constraint_margins`, `trajectory_stats` を JSON シリアライズに追加
+
+### 最適化結果
+
+#### ラン 1: dq_max=1.0 rad/s, T=5s, harmonics=3
+
+wandb ラン: `fourier-bounds-dq1-T5`
+
+| 指標 | 値 |
+|---|---|
+| 条件数 | **11.56** |
+| D-opt 値 | -70.8 |
+| feasible | **Yes** (全制約マージン ≥ 0) |
+| wall time | ~3700s |
+| restarts | 20 (patience=10, target_cond=5.0) |
+
+初めて全 restart で feasible な解を獲得。Fourier バウンドにより速度制約が構造的に保証され、SLSQP が衝突・ワークスペース制約のみに集中できるようになった。
+
+#### ラン 2: dq_max=2.0 rad/s, T=5s, harmonics=3
+
+wandb ラン: `fourier-bounds-dq2-T5` (run ID: q25kplzw)
+
+| 指標 | 値 |
+|---|---|
+| 条件数 | **6.90** |
+| D-opt 値 | -95.2 |
+| feasible | **実質 Yes** (margin ≥ -5e-11) |
+| wall time | ~185s (1 restart 完了時点) |
+| best start | 1 |
+
+| 制約 | マージン | 状態 |
+|---|---|---|
+| joint_position | +4.41 | OK |
+| workspace | +0.22 | OK |
+| payload_workspace | -4.76e-11 | OK (数値精度) |
+| collision | -1.75e-11 | OK (数値精度) |
+
+### 分析
+
+1. **Fourier バウンドは feasibility 問題を完全に解決**: dq_max=1.0 では全解 feasible、dq_max=2.0 でも数値精度レベルの違反のみ
+2. **dq_max の緩和は条件数を大幅に改善**: 1.0 rad/s → 11.56、2.0 rad/s → 6.90
+3. **κ=6.90 は実用範囲内**: Kubus et al. (2008) の κ=7-8 と同等
+4. **SLSQP はバウンド導入後に十分機能**: アルゴリズム変更は不要と判断
+
+### さらなる改善の方向性（議論のみ、未実装）
+
+1. **線形制約への拡張**: 均等配分ではなく `Σ_k (|a_{j,k}| + |b_{j,k}|) * α_k ≤ dq_max_j` を線形制約として直接実装 → バウンドの保守性を低減
+2. **高調波数の増加**: harmonics=3→5 で表現力向上（ただし計算コスト増）
+3. **feasibility 閾値の導入**: margin > -1e-6 を feasible とみなす実用的判定

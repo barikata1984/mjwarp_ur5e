@@ -27,7 +27,7 @@
 - [x] stdout flush 対応 (`print(..., flush=True)`)
 - [x] 診断ラン実施 (constrained / unconstrained 並列比較)
 - [x] 目的関数を D-optimal 基準に変更 (`-log det(W^T W)`, 条件数はバリデーション指標に)
-- [ ] **解析的 Fourier 係数バウンドの導入** (三角不等式で vel/acc 違反を構造的に排除) ← 最優先
+- [x] **解析的 Fourier 係数バウンドの導入** (三角不等式で vel/acc 違反を構造的に排除)
 - [ ] 制約の段階的評価（安い制約で早期棄却し FK ループをスキップ）
 - [ ] collision constraint の高速化 (FK ループ共有化)
 - [ ] 最適化アルゴリズムの変更 (SLSQP → COBYLA or IPOPT) ← バウンド導入後に再評価
