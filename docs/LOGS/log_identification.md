@@ -317,3 +317,159 @@ ROSノード等の外部システムから直接再生可能な、各タイム�
 
 レンダリング動画（5秒）は `playback_speed=0.2` で引き伸ばしたもの。
 実時間では1秒の軌道であり、デフォルト設定での本番再最適化が必要。
+
+---
+
+## 2026-03-13: wandb 実験追跡・アーリーストップ実装
+
+### 目的
+
+長時間の最適化ランのモニタリングと不要な計算の早期打ち切りを実現する。
+
+### 実装内容
+
+#### `WandbConfig` / `EarlyStopConfig` — `optimizer.py`
+
+```python
+@dataclass
+class WandbConfig:
+    enabled: bool = False
+    project: str = "ur5e-excitation"
+    run_name: str | None = None
+    tags: list[str] = field(default_factory=list)
+
+@dataclass
+class EarlyStopConfig:
+    enabled: bool = False
+    patience: int = 5
+    min_improvement: float = 1e-3
+```
+
+#### wandb メトリクス
+
+| レベル | メトリクス |
+|---|---|
+| per-iteration | `iter/condition_number`, `iter/restart_index`, `iter/iter_in_restart`, `iter/wall_time` |
+| per-restart | `restart/condition_number`, `restart/global_best_cond`, `restart/constraint_margin_min`, `restart/feasible`, `restart/n_func_evals`, `restart/n_iters`, `restart/wall_time_s`, `restart/improved`, `restart/index` |
+| final summary | `final/condition_number`, `final/best_restart_index`, `final/total_restarts`, `final/total_func_evals`, `final/wall_time_s` |
+
+#### per-iteration ロギングの工夫
+
+scipy `minimize` の `callback` は `xk` のみ渡すため、目的関数クロージャ内で `_latest_cond` に最新値を保存し、callback 内でそれを読み取る設計とした。
+これにより目的関数の再評価を回避している。
+
+#### CLI 統合 — `cli/configs.py`, `demos/optimize_excitation_trajectory.py`
+
+`OptimizeExcitationConfig` に `--wandb`, `--wandb-project`, `--wandb-run-name`, `--early-stop`, `--early-stop-patience` フラグを追加。
+
+### 変更ファイル
+
+- `src/mjwarp_ur5e/identification/optimizer.py`: `WandbConfig`, `EarlyStopConfig`, `_config_to_wandb_dict()` 追加、`optimize()` の引数拡張
+- `src/mjwarp_ur5e/cli/configs.py`: CLI フラグ追加
+- `src/mjwarp_ur5e/demos/optimize_excitation_trajectory.py`: wandb/early_stop config のワイヤリング
+
+---
+
+## 2026-03-13: Config D による本番最適化ラン
+
+### 計算コスト分析
+
+軽量テストラン (harmonics=2, duration=4s, subsample=10, mc=2, mi=5) の実測値をもとに、各設定の推定計算時間を算出した。
+
+| 設定 | harmonics | duration | subsample | mc | mi | 推定時間 |
+|---|---|---|---|---|---|---|
+| A (default) | 5 | 10s | 10 | 20 | 200 | **9.2h** |
+| B | 5 | 10s | 10 | 10 | 100 | 4.6h |
+| C | 5 | 10s | 20 | 20 | 200 | 4.6h |
+| **D** | **5** | **10s** | **20** | **10** | **100** | **2.3h** |
+| E | 3 | 10s | 10 | 10 | 100 | 2.4h |
+| F | 5 | 5s | 10 | 10 | 100 | 2.3h |
+
+Config A は最初に実行を開始したが 6 時間超経過しても終了せず停止。
+Config D を早期停止付きで実行した。
+
+### 最適化結果 (Config D + early stop)
+
+| 指標 | 値 |
+|---|---|
+| 条件数 | **2.5690** |
+| 計算時間 | 13789.5s (~3.8h) |
+| 評価回数 | 58,178 |
+| 完了 restart | 9/10 (patience=5 で早期停止) |
+| best start index | 3 |
+| **feasible** | **全 restart で False** |
+
+wandb ラン: `balanced-d` (project: `ur5e-excitation`)
+
+### 制約違反の分析
+
+全 restart が infeasible (最小制約マージン < 0) であった。
+restart 1 の margin=-0.0125 が最も 0 に近いが、それでも制約を満たしていない。
+
+原因: `subsample_factor=20` により、制約は 1001 timestep 中 51 点でしか評価されない。
+サンプル間の制約違反を optimizer が検知できず、infeasible な解に収束する。
+
+---
+
+## 2026-03-13: Kubus et al. (2008) 論文調査
+
+### 論文概要
+
+"On-Line Estimation of Inertial Parameters Using a Recursive Total Least-Squares Approach" (IROS 2008)
+
+### 軌道パラメータ
+
+| パラメータ | 値 |
+|---|---|
+| 軌道持続時間 | **1.5s** |
+| 最大周波数 | **2 Hz** |
+| Fourier 高調波数 | 3 |
+| サンプリング周波数 | 250 Hz |
+| 条件数 | **7–8** |
+
+### 本プロジェクトとの比較
+
+| | Kubus et al. | 本プロジェクト |
+|---|---|---|
+| 持続時間 | 1.5s | 10.0s |
+| 条件数 | 7–8 | 2.57 |
+| 高調波 | 3 | 5 |
+| 実行可能性 | 制約充足 | **全 infeasible** |
+
+条件数は κ=7–8 で十分とされる。本プロジェクトの κ=2.57 は数値的に優れているが、
+制約を満たさない軌道は実機で実行不可能であり、feasibility の改善が最優先事項。
+
+---
+
+## 2026-03-13: 並列 Monte Carlo 最適化の設計
+
+### 動機
+
+Config D でも ~3.8h の計算時間がかかる。マルチコア並列化により線形に短縮可能。
+
+### アーキテクチャ設計
+
+```
+ProcessPoolExecutor (N workers)
+├── Worker 0: load model → run restart 0, N, 2N, ...
+├── Worker 1: load model → run restart 1, N+1, 2N+1, ...
+├── ...
+└── Worker N-1
+```
+
+#### MuJoCo スレッド安全性
+
+- `MjModel`: 読み取り専用 → プロセス間共有可能（ただし ProcessPool では各 worker がロード）
+- `MjData`: ミュータブル → **各 worker が独自に `mj_makeData` で生成**
+
+#### 設計ポイント
+
+1. 各 worker は独立に `MjModel`/`MjData` をロードし、割り当てられた restart をシーケンシャルに実行
+2. `concurrent.futures.as_completed()` で完了順に結果を収集
+3. メインプロセスが wandb ロギングと early stopping 判定を担当
+4. `OptimizationResult` は pickle 可能（numpy 配列 + dataclass）
+5. 推定スピードアップ: 4 workers で ~4x（CPU バウンド）
+
+### 未実装
+
+コード実装は未着手。設計のみ完了。

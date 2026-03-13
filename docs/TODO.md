@@ -15,6 +15,14 @@
 - [x] フェーズ 7: 慣性推定器との接続 (LS / TLS / RTLS)
 - [x] フェーズ 8: Warp 導入と高速化
 
+## 最適化品質の改善
+
+- [x] wandb 実験追跡 (per-iteration / per-restart メトリクス)
+- [x] early stopping (patience ベースの restart 打ち切り)
+- [ ] `subsample_factor` 問題の解決 — 制約違反の見逃し (→ `docs/ISSUES.md`)
+- [ ] `EarlyStopConfig.min_improvement` の early stopping ロジックへの組み込み
+- [ ] 並列 Monte Carlo 最適化の実装 (`ProcessPoolExecutor`, 設計済み)
+
 ## インフラ・共通
 
 - [x] devcontainer + Docker Compose 基盤
