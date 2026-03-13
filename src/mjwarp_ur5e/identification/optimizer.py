@@ -18,7 +18,7 @@ from mjwarp_ur5e.identification.objective import (
     condition_number_objective,
     evaluate_full_resolution,
 )
-from mjwarp_ur5e.identification.workspace import WorkspaceConstraintConfig
+from mjwarp_ur5e.identification.workspace import EeVelocityConfig, WorkspaceConstraintConfig
 
 _UR5E_HOME = np.array([np.pi / 2, -np.pi / 2, np.pi / 2, -np.pi / 2, -np.pi / 2, 0.0])
 
@@ -43,6 +43,7 @@ class OptimizerConfig:
     workspace_config: WorkspaceConstraintConfig | None = None
     payload_workspace_config: WorkspaceConstraintConfig | None = None
     collision_config: CollisionConfig | None = None
+    ee_velocity_config: EeVelocityConfig | None = None
     body_name: str = "payload_box_mount"
     site_name: str = "attachment_site"
 
@@ -60,6 +61,7 @@ class EarlyStopConfig:
     enabled: bool = False
     patience: int = 5
     min_improvement: float = 1e-3
+    target_cond: float = 0.0  # Stop when condition number <= this (0 = disabled)
 
 
 @dataclass
@@ -115,6 +117,8 @@ def _config_to_wandb_dict(cfg: OptimizerConfig) -> dict:
         d["max_displacement"] = cfg.workspace_config.max_displacement
     d["collision_enabled"] = cfg.collision_config is not None
     d["payload_workspace_enabled"] = cfg.payload_workspace_config is not None
+    if cfg.ee_velocity_config is not None:
+        d["ee_max_linear_velocity"] = cfg.ee_velocity_config.max_linear_velocity
     return d
 
 
@@ -165,6 +169,8 @@ class ExcitationOptimizer:
             data=self.data,
             payload_workspace_config=cfg.payload_workspace_config,
             payload_body_name=cfg.body_name,
+            ee_velocity_config=cfg.ee_velocity_config,
+            site_name=cfg.site_name,
         )
         return cache, constraints
 
@@ -294,6 +300,14 @@ class ExcitationOptimizer:
 
             # Early stopping check
             if es.enabled:
+                # Target condition number reached (current restart must be feasible)
+                if es.target_cond > 0 and feasible and cond <= es.target_cond:
+                    print(
+                        f"  Early stop: target cond {es.target_cond} reached "
+                        f"(cond={cond:.4f}, feasible=True)"
+                    )
+                    break
+                # Patience-based stopping
                 if improved and (best_cond < float("inf")):
                     patience_counter = 0
                 else:

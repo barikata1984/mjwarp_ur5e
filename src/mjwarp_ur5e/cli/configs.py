@@ -67,17 +67,19 @@ class RenderConfig:
 class OptimizeExcitationConfig(ModelConfig):
     """Config for excitation trajectory optimization CLI."""
 
-    num_harmonics: int = 5
-    base_freq: float = 0.1
-    duration: float = 10.0
+    num_harmonics: int = 3
+    base_freq: float = 1.0 / 3.0
+    duration: float = 3.0
     fps: float = 100.0
-    subsample_factor: int = 10
+    subsample_factor: int = 1
     n_monte_carlo: int = 20
     max_iter: int = 200
     seed: int = 42
     max_displacement: float = 0.5
     enable_collision: bool = True
     enable_payload_workspace: bool = True
+    ee_max_linear_velocity: float = 0.25  # m/s, 0 to disable
+    dq_max: float = 0.0873  # rad/s (~5 deg/s), uniform limit for all joints (0 to use defaults)
     output: str = "results/excitation_result.json"
     trajectory_output: str = "results/excitation_trajectory.json"
     trajectory_fps: float = 0.0
@@ -88,6 +90,7 @@ class OptimizeExcitationConfig(ModelConfig):
     # early stopping
     early_stop: bool = False
     early_stop_patience: int = 5
+    early_stop_target_cond: float = 0.0  # Stop when cond <= this (0 = disabled)
 
 
 @dataclass(slots=True)

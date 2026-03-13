@@ -19,7 +19,7 @@ from mjwarp_ur5e.identification.optimizer import (
     OptimizerConfig,
     WandbConfig,
 )
-from mjwarp_ur5e.identification.workspace import WorkspaceConstraintConfig
+from mjwarp_ur5e.identification.workspace import EeVelocityConfig, WorkspaceConstraintConfig
 from mjwarp_ur5e.model import get_named_object_id, load_and_reset
 
 
@@ -54,6 +54,20 @@ def main() -> None:
                 box_lower=box_lower, box_upper=box_upper
             )
 
+    # EE velocity constraint
+    ee_velocity_config: EeVelocityConfig | None = None
+    if config.ee_max_linear_velocity > 0:
+        ee_velocity_config = EeVelocityConfig(max_linear_velocity=config.ee_max_linear_velocity)
+
+    # Joint velocity override
+    joint_limits: JointLimits | None = None
+    if config.dq_max > 0:
+        from mjwarp_ur5e.identification.constraints import JointLimits
+
+        joint_limits = JointLimits(
+            dq_max=np.full(6, config.dq_max),
+        )
+
     opt_config = OptimizerConfig(
         num_joints=6,
         num_harmonics=config.num_harmonics,
@@ -65,9 +79,11 @@ def main() -> None:
         n_monte_carlo=config.n_monte_carlo,
         max_iter_per_start=config.max_iter,
         seed=config.seed,
+        joint_limits=joint_limits,
         workspace_config=workspace_config,
         collision_config=collision_config,
         payload_workspace_config=payload_workspace_config,
+        ee_velocity_config=ee_velocity_config,
     )
 
     optimizer = ExcitationOptimizer(config=opt_config, model=loaded.model, data=loaded.data)
@@ -80,6 +96,7 @@ def main() -> None:
     early_stop_cfg = EarlyStopConfig(
         enabled=config.early_stop,
         patience=config.early_stop_patience,
+        target_cond=config.early_stop_target_cond,
     )
 
     print("Starting excitation trajectory optimization...")
@@ -88,8 +105,15 @@ def main() -> None:
     print(f"  max_iter_per_start={config.max_iter}")
     if config.wandb:
         print(f"  wandb: project={config.wandb_project}")
+    if config.ee_max_linear_velocity > 0:
+        print(f"  EE velocity limit: {config.ee_max_linear_velocity} m/s")
+    if config.dq_max > 0:
+        print(f"  joint velocity limit: {config.dq_max} rad/s (all joints)")
     if config.early_stop:
-        print(f"  early stopping: patience={config.early_stop_patience}")
+        msg = f"  early stopping: patience={config.early_stop_patience}"
+        if config.early_stop_target_cond > 0:
+            msg += f", target_cond={config.early_stop_target_cond}"
+        print(msg)
     result = optimizer.optimize(wandb_config=wandb_cfg, early_stop_config=early_stop_cfg)
 
     output_path = Path(config.output)

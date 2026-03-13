@@ -18,6 +18,13 @@ class WorkspaceConstraintConfig:
     safety_margin: float = 0.01
 
 
+@dataclass(frozen=True)
+class EeVelocityConfig:
+    """End-effector linear velocity limit."""
+
+    max_linear_velocity: float = 0.25  # m/s
+
+
 def _evaluate_workspace_positions(
     model: mujoco.MjModel,
     data: mujoco.MjData,
@@ -199,5 +206,52 @@ def make_payload_workspace_constraint(
         verts = _evaluate_payload_vertices(model, data, sample.position, body_name)
         pts = verts.reshape(-1, 3)
         return _compute_box_margin(pts, lower, upper, margin)
+
+    return constraint
+
+
+def _evaluate_ee_linear_velocity(
+    model: mujoco.MjModel,
+    data: mujoco.MjData,
+    q_trajectory: np.ndarray,
+    dq_trajectory: np.ndarray,
+    site_name: str = "attachment_site",
+) -> np.ndarray:
+    """Return EE linear speed (n_steps,) for each timestep."""
+    site_id = get_named_object_id(model, mujoco.mjtObj.mjOBJ_SITE, site_name)
+    if site_id is None:
+        raise ValueError(f"Unknown site: {site_name}")
+
+    nv = model.nv
+    n_steps = q_trajectory.shape[0]
+    speeds = np.zeros(n_steps, dtype=np.float64)
+    jacp = np.zeros((3, nv), dtype=np.float64)
+
+    for i in range(n_steps):
+        data.qpos[:] = q_trajectory[i]
+        mujoco.mj_kinematics(model, data)
+        jacp[:] = 0.0
+        mujoco.mj_jacSite(model, data, jacp, None, site_id)
+        linear_vel = jacp @ dq_trajectory[i]
+        speeds[i] = np.linalg.norm(linear_vel)
+
+    return speeds
+
+
+def make_ee_velocity_constraint(
+    cache: _TrajectoryCache,
+    ee_velocity_config: EeVelocityConfig,
+    model: mujoco.MjModel,
+    data: mujoco.MjData,
+    site_name: str = "attachment_site",
+) -> Callable[[np.ndarray], float]:
+    """Return f(x)->float >= 0 iff EE linear speed stays within limit."""
+
+    def constraint(x: np.ndarray) -> float:
+        sample = cache.get(x)
+        speeds = _evaluate_ee_linear_velocity(
+            model, data, sample.position, sample.velocity, site_name
+        )
+        return float(ee_velocity_config.max_linear_velocity - np.max(speeds))
 
     return constraint

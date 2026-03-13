@@ -8,13 +8,13 @@ model:
 
 trajectory:
   num_joints: 6
-  num_harmonics: 5
-  base_freq: 0.1
-  duration: 10.0
+  num_harmonics: 3
+  base_freq: 0.3333
+  duration: 3.0
   fps: 100.0
 
 optimizer:
-  subsample_factor: 10
+  subsample_factor: 1
   n_monte_carlo: 20
   max_iter_per_start: 200
   optimizer_method: "SLSQP"
@@ -24,8 +24,11 @@ optimizer:
 joint_limits:
   q_min: [-6.2832, -6.2832, -6.2832, -6.2832, -6.2832, -6.2832]
   q_max: [6.2832, 6.2832, 6.2832, 6.2832, 6.2832, 6.2832]
-  dq_max: [3.1416, 3.1416, 3.1416, 6.2832, 6.2832, 6.2832]
+  dq_max: [0.0873, 0.0873, 0.0873, 0.0873, 0.0873, 0.0873]  # ~5 deg/s
   ddq_max: [8.0, 8.0, 8.0, 8.0, 8.0, 8.0]
+
+ee_velocity:
+  max_linear_velocity: 0.25
 
 workspace:
   max_displacement: 0.5

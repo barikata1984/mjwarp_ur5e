@@ -15,7 +15,7 @@ from mjwarp_ur5e.trajectories.windowed_fourier import (
 
 if TYPE_CHECKING:
     from mjwarp_ur5e.identification.collision import CollisionConfig
-    from mjwarp_ur5e.identification.workspace import WorkspaceConstraintConfig
+    from mjwarp_ur5e.identification.workspace import EeVelocityConfig, WorkspaceConstraintConfig
 
 
 @dataclass(frozen=True)
@@ -152,6 +152,8 @@ def build_scipy_constraints(
     data: mujoco.MjData | None = None,
     payload_workspace_config: WorkspaceConstraintConfig | None = None,
     payload_body_name: str = "payload_box_mount",
+    ee_velocity_config: EeVelocityConfig | None = None,
+    site_name: str = "attachment_site",
 ) -> list[dict]:
     """Assemble all constraints in scipy.optimize format."""
     from mjwarp_ur5e.identification.collision import (
@@ -159,6 +161,7 @@ def build_scipy_constraints(
         make_collision_constraint,
     )
     from mjwarp_ur5e.identification.workspace import (
+        make_ee_velocity_constraint,
         make_payload_workspace_constraint,
         make_workspace_constraint,
     )
@@ -190,5 +193,15 @@ def build_scipy_constraints(
     if collision_config is not None and model is not None and data is not None:
         checker = CollisionChecker(model, data, collision_config)
         constraints.append({"type": "ineq", "fun": make_collision_constraint(cache, checker)})
+
+    if ee_velocity_config is not None and model is not None and data is not None:
+        constraints.append(
+            {
+                "type": "ineq",
+                "fun": make_ee_velocity_constraint(
+                    cache, ee_velocity_config, model, data, site_name
+                ),
+            }
+        )
 
     return constraints
