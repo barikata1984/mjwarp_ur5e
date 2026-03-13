@@ -15,13 +15,19 @@
 - [x] フェーズ 7: 慣性推定器との接続 (LS / TLS / RTLS)
 - [x] フェーズ 8: Warp 導入と高速化
 
-## 最適化品質の改善
+## 最適化品質の改善 — feasible 解の獲得 (→ `docs/ISSUES.md`)
 
 - [x] wandb 実験追跡 (per-iteration / per-restart メトリクス)
 - [x] early stopping (patience ベースの restart 打ち切り)
-- [ ] `subsample_factor` 問題の解決 — 制約違反の見逃し (→ `docs/ISSUES.md`)
-- [ ] `EarlyStopConfig.min_improvement` の early stopping ロジックへの組み込み
+- [x] duration 短縮 + harmonics 削減 (duration=3.0s, harmonics=3, base_freq=1/3Hz)
+- [x] EE 線速度制約の追加 (`EeVelocityConfig`, Jacobian ベース)
+- [x] 関節速度上限の CLI 設定 (`--dq-max`, デフォルト 5 deg/s)
+- [x] 目標条件数 early stop (`EarlyStopConfig.target_cond`, feasible 時のみ発動)
+- [ ] 制約の段階的評価（安い制約で早期棄却し FK ループをスキップ）
+- [ ] 解析的 velocity/acceleration 上界の導入 (Fourier 係数の三角不等式)
 - [ ] 並列 Monte Carlo 最適化の実装 (`ProcessPoolExecutor`, 設計済み)
+- [ ] `EarlyStopConfig.min_improvement` の early stopping ロジックへの組み込み
+- [ ] 最適化の 1 iteration 所要時間の実測プロファイリング
 
 ## インフラ・共通
 

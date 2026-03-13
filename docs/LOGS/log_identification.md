@@ -473,3 +473,64 @@ ProcessPoolExecutor (N workers)
 ### 未実装
 
 コード実装は未着手。設計のみ完了。
+
+---
+
+## 2026-03-13: infeasibility 根本原因の再調査と最適化設定の改善
+
+### 根本原因の訂正
+
+前回セッションで「`subsample_factor=20` により制約が 51 点でしか評価されない」と記載したが、
+コード精査により **制約関数は `subsample_factor` の影響を受けず、常に全 timestep で評価されている** ことを確認。
+`subsample_factor` は目的関数（条件数計算）にのみ適用される。
+
+真の原因は以下の複合要因:
+1. **duration=10s が過剰**: timestep 数が線形に増え制約評価コストが膨大
+2. **60 変数 (6 joints × 5 harmonics × 2)** の広い探索空間で SLSQP が feasible 領域を見つけられない
+3. FK ベース制約 (workspace/payload/collision) × 全 timestep × 37 回/iteration (有限差分) が計算コストの ~97%
+
+### 実装した改善
+
+#### 1. duration 短縮 + harmonics 削減
+- duration: 10.0s → **3.0s** (Kubus et al. は 1.5s で κ=7-8 を達成)
+- harmonics: 5 → **3** (決定変数: 60 → 36)
+- base_freq: 0.1 → **1/3 Hz**
+- subsample_factor: 10 → **1** (目的関数も全点評価)
+
+#### 2. EE 線速度制約の追加
+- `EeVelocityConfig(max_linear_velocity=0.25)` — 0.25 m/s 上限
+- site Jacobian × joint velocity で各 timestep の EE 線速度を計算
+- `workspace.py` に `_evaluate_ee_linear_velocity()`, `make_ee_velocity_constraint()` を追加
+
+#### 3. 関節速度上限の CLI 設定
+- `--dq-max 0.0873` (≈5 deg/s) で全関節の速度上限を一律設定
+- 人が近傍にいる環境での安全性を考慮した値
+
+#### 4. 目標条件数 early stop
+- `EarlyStopConfig.target_cond` を追加
+- **現在の restart が feasible かつ κ ≤ target_cond の場合のみ** 停止
+- infeasible な解での早期停止を防止
+
+### 変更ファイル
+
+| ファイル | 変更内容 |
+|---|---|
+| `workspace.py` | `EeVelocityConfig`, EE 速度評価・制約関数 |
+| `constraints.py` | `build_scipy_constraints` に `ee_velocity_config`, `site_name` 引数追加 |
+| `optimizer.py` | `target_cond`, `ee_velocity_config` 対応、early stop の feasibility チェック |
+| `configs.py` | 新デフォルト値、`ee_max_linear_velocity`, `dq_max`, `early_stop_target_cond` |
+| `optimize_excitation_trajectory.py` | 新制約のワイヤリング、`dq_max` による JointLimits 上書き |
+| `default.yaml` | 新デフォルト設定 |
+| `test_cli_excitation.py` | デフォルト値アサーションの更新 |
+
+### 最適化実行
+
+新設定 (duration=3s, harmonics=3, dq_max=5deg/s, EE vel≤0.25m/s, target κ≤5) で
+最適化を開始したが、30 分以上経過しても最初の restart が完了せず、セッション時間内に結果を得られなかった。
+
+### 残存課題
+
+1. **1 iteration のプロファイリング**: 実測なしに推測で最適化するのは非効率
+2. **制約の段階的評価**: 安い制約（joint limits, 純 NumPy）を先に評価し、違反なら FK 制約をスキップ
+3. **解析的 velocity/acceleration 上界**: Fourier 係数の三角不等式で FK ループを排除
+4. **並列 Monte Carlo**: restart 数を増やして feasible 解の発見確率を向上
