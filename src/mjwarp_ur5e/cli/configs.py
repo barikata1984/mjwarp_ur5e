@@ -80,12 +80,14 @@ class OptimizeExcitationConfig(ModelConfig):
     enable_payload_workspace: bool = True
     ee_max_linear_velocity: float = 0.25  # m/s, 0 to disable
     dq_max: float = 0.0873  # rad/s (~5 deg/s), uniform limit for all joints (0 to use defaults)
+    enable_acc_constraint: bool = True  # Enable joint acceleration constraint
+    use_fourier_bounds: bool = False  # Use analytical Fourier coefficient bounds for velocity
     objective: str = "d_optimal"  # "d_optimal" or "condition_number"
     output: str = "results/excitation_result.json"
     trajectory_output: str = "results/excitation_trajectory.json"
     trajectory_fps: float = 0.0
     # wandb logging
-    wandb: bool = False
+    wandb: bool = True
     wandb_project: str = "ur5e-excitation"
     wandb_run_name: str | None = None
     # early stopping

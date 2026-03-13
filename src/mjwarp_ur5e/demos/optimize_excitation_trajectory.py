@@ -68,6 +68,10 @@ def main() -> None:
             dq_max=np.full(6, config.dq_max),
         )
 
+    # When Fourier bounds are enabled, disable the per-timestep velocity constraint
+    # (the bounds already guarantee velocity feasibility structurally)
+    enable_vel_constraint = not config.use_fourier_bounds
+
     opt_config = OptimizerConfig(
         num_joints=6,
         num_harmonics=config.num_harmonics,
@@ -85,6 +89,9 @@ def main() -> None:
         collision_config=collision_config,
         payload_workspace_config=payload_workspace_config,
         ee_velocity_config=ee_velocity_config,
+        enable_velocity_constraint=enable_vel_constraint,
+        enable_acceleration_constraint=config.enable_acc_constraint,
+        use_fourier_bounds=config.use_fourier_bounds,
     )
 
     optimizer = ExcitationOptimizer(config=opt_config, model=loaded.model, data=loaded.data)
@@ -111,6 +118,12 @@ def main() -> None:
         print(f"  EE velocity limit: {config.ee_max_linear_velocity} m/s", flush=True)
     if config.dq_max > 0:
         print(f"  joint velocity limit: {config.dq_max} rad/s (all joints)", flush=True)
+    if config.use_fourier_bounds:
+        print(
+            "  Fourier coefficient bounds: ENABLED (velocity constraint via box bounds)", flush=True
+        )
+    if not config.enable_acc_constraint:
+        print("  acceleration constraint: DISABLED", flush=True)
     if config.early_stop:
         msg = f"  early stopping: patience={config.early_stop_patience}"
         if config.early_stop_target_cond > 0:
@@ -124,9 +137,23 @@ def main() -> None:
 
     print("\nOptimization complete:")
     print(f"  Condition number: {result.condition_number:.4f}")
+    print(f"  Feasible: {result.feasible}")
     print(f"  Wall time: {result.wall_time:.1f}s")
     print(f"  Total evaluations: {result.n_evaluations}")
     print(f"  Best start index: {result.best_start_index}")
+    if result.constraint_margins:
+        print("  Constraint margins:")
+        for name, margin in result.constraint_margins.items():
+            status = "OK" if margin >= 0 else "VIOLATED"
+            print(f"    {name}: {margin:.6f}  [{status}]")
+    if result.trajectory_stats:
+        print("  Trajectory stats:")
+        for key, val in result.trajectory_stats.items():
+            if isinstance(val, list):
+                formatted = ", ".join(f"{v:.4f}" for v in val)
+                print(f"    {key}: [{formatted}]")
+            else:
+                print(f"    {key}: {val:.4f}")
     print(f"  Output: {output_path}")
 
     # Export sampled trajectory JSON for real robot playback

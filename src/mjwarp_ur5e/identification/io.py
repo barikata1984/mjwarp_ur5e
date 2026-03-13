@@ -19,6 +19,9 @@ def save_optimization_result(
     payload = {
         "x_opt": result.x_opt.tolist(),
         "condition_number": result.condition_number,
+        "feasible": result.feasible,
+        "constraint_margins": result.constraint_margins,
+        "trajectory_stats": result.trajectory_stats,
         "a_opt": result.a_opt.tolist(),
         "b_opt": result.b_opt.tolist(),
         "q0": result.q0.tolist(),

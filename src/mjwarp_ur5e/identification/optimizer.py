@@ -9,10 +9,13 @@ import numpy as np
 from scipy.optimize import minimize
 
 from mjwarp_ur5e.identification.collision import CollisionConfig
+from scipy.optimize import Bounds
+
 from mjwarp_ur5e.identification.constraints import (
     JointLimits,
     _TrajectoryCache,
     build_scipy_constraints,
+    compute_fourier_velocity_bounds,
 )
 from mjwarp_ur5e.identification.objective import (
     condition_number_objective,
@@ -48,6 +51,9 @@ class OptimizerConfig:
     ee_velocity_config: EeVelocityConfig | None = None
     body_name: str = "payload_box_mount"
     site_name: str = "attachment_site"
+    enable_velocity_constraint: bool = True
+    enable_acceleration_constraint: bool = True
+    use_fourier_bounds: bool = False
 
     def __post_init__(self) -> None:
         if self.q0 is None:
@@ -88,6 +94,10 @@ class OptimizationResult:
     wall_time: float
     n_restarts: int
     best_start_index: int
+    # Diagnostics (populated after optimization)
+    constraint_margins: dict[str, float] = field(default_factory=dict)
+    feasible: bool = False
+    trajectory_stats: dict[str, float] = field(default_factory=dict)
 
 
 def _config_to_wandb_dict(cfg: OptimizerConfig) -> dict:
@@ -120,6 +130,9 @@ def _config_to_wandb_dict(cfg: OptimizerConfig) -> dict:
         d["max_displacement"] = cfg.workspace_config.max_displacement
     d["collision_enabled"] = cfg.collision_config is not None
     d["payload_workspace_enabled"] = cfg.payload_workspace_config is not None
+    d["use_fourier_bounds"] = cfg.use_fourier_bounds
+    d["enable_velocity_constraint"] = cfg.enable_velocity_constraint
+    d["enable_acceleration_constraint"] = cfg.enable_acceleration_constraint
     if cfg.ee_velocity_config is not None:
         d["ee_max_linear_velocity"] = cfg.ee_velocity_config.max_linear_velocity
     return d
@@ -141,7 +154,9 @@ class ExcitationOptimizer:
     def _get_x_size(self) -> int:
         return 2 * self.config.num_joints * self.config.num_harmonics
 
-    def _generate_random_x0(self, rng: np.random.Generator) -> np.ndarray:
+    def _generate_random_x0(
+        self, rng: np.random.Generator, bounds: Bounds | None = None
+    ) -> np.ndarray:
         nj = self.config.num_joints
         nh = self.config.num_harmonics
         x = np.zeros(2 * nj * nh, dtype=np.float64)
@@ -149,6 +164,8 @@ class ExcitationOptimizer:
             scale = 0.3 / (k + 1)
             x[k * nj : (k + 1) * nj] = rng.uniform(-scale, scale, size=nj)
             x[nj * nh + k * nj : nj * nh + (k + 1) * nj] = rng.uniform(-scale, scale, size=nj)
+        if bounds is not None:
+            x = np.clip(x, bounds.lb, bounds.ub)
         return x
 
     def _build_cache_and_constraints(self) -> tuple[_TrajectoryCache, list[dict]]:
@@ -174,12 +191,46 @@ class ExcitationOptimizer:
             payload_body_name=cfg.body_name,
             ee_velocity_config=cfg.ee_velocity_config,
             site_name=cfg.site_name,
+            enable_velocity_constraint=cfg.enable_velocity_constraint,
+            enable_acceleration_constraint=cfg.enable_acceleration_constraint,
         )
         return cache, constraints
+
+    def _compute_fourier_bounds(self) -> Bounds | None:
+        """Compute scipy Bounds from analytical Fourier velocity bounds."""
+        cfg = self.config
+        if not cfg.use_fourier_bounds or cfg.joint_limits is None:
+            return None
+        upper = compute_fourier_velocity_bounds(
+            num_joints=cfg.num_joints,
+            num_harmonics=cfg.num_harmonics,
+            base_freq=cfg.base_freq,
+            duration=cfg.duration,
+            dq_max=cfg.joint_limits.dq_max,
+        )
+        return Bounds(lb=-upper, ub=upper)
 
     def _compute_constraint_margin(self, x: np.ndarray, constraints: list[dict]) -> float:
         """Return the minimum constraint margin (>= 0 means all satisfied)."""
         return min(float(c["fun"](x)) for c in constraints)
+
+    @staticmethod
+    def _compute_named_margins(x: np.ndarray, constraints: list[dict]) -> dict[str, float]:
+        """Compute per-constraint margin using the 'name' key."""
+        return {
+            c.get("name", f"constraint_{i}"): float(c["fun"](x)) for i, c in enumerate(constraints)
+        }
+
+    def _compute_trajectory_stats(self, x: np.ndarray, cache: _TrajectoryCache) -> dict[str, float]:
+        """Compute trajectory-level statistics for diagnostics."""
+        sample = cache.get(x)
+        return {
+            "q_max": float(np.max(np.abs(sample.position))),
+            "dq_max": float(np.max(np.abs(sample.velocity))),
+            "ddq_max": float(np.max(np.abs(sample.acceleration))),
+            "dq_per_joint_max": np.max(np.abs(sample.velocity), axis=0).tolist(),
+            "ddq_per_joint_max": np.max(np.abs(sample.acceleration), axis=0).tolist(),
+        }
 
     def optimize(
         self,
@@ -196,6 +247,7 @@ class ExcitationOptimizer:
         cfg = self.config
         q0 = np.asarray(cfg.q0, dtype=np.float64)
         cache, constraints = self._build_cache_and_constraints()
+        fourier_bounds = self._compute_fourier_bounds()
 
         # --- wandb setup ---
         wb_run = None
@@ -249,7 +301,7 @@ class ExcitationOptimizer:
 
         actual_restarts = 0
         for i in range(cfg.n_monte_carlo):
-            x0 = self._generate_random_x0(rng)
+            x0 = self._generate_random_x0(rng, bounds=fourier_bounds)
             iter_in_restart = [0]
             restart_t0 = time.perf_counter()
 
@@ -273,6 +325,7 @@ class ExcitationOptimizer:
                 objective,
                 x0,
                 method=cfg.optimizer_method,
+                bounds=fourier_bounds,
                 constraints=constraints,
                 options={"maxiter": cfg.max_iter_per_start, "ftol": cfg.ftol},
                 callback=_callback,
@@ -316,21 +369,22 @@ class ExcitationOptimizer:
             # Log restart-level metrics
             if wb_run is not None:
                 global_step += 1
-                wb_run.log(
-                    {
-                        "restart/condition_number": cond,
-                        "restart/objective": obj_val,
-                        "restart/global_best_cond": best_cond,
-                        "restart/constraint_margin_min": margin,
-                        "restart/feasible": int(feasible),
-                        "restart/n_func_evals": result.nfev,
-                        "restart/n_iters": iter_in_restart[0],
-                        "restart/wall_time_s": restart_wall,
-                        "restart/improved": int(improved),
-                        "restart/index": i,
-                    },
-                    step=global_step,
-                )
+                restart_log: dict = {
+                    "restart/condition_number": cond,
+                    "restart/objective": obj_val,
+                    "restart/global_best_cond": best_cond,
+                    "restart/constraint_margin_min": margin,
+                    "restart/feasible": int(feasible),
+                    "restart/n_func_evals": result.nfev,
+                    "restart/n_iters": iter_in_restart[0],
+                    "restart/wall_time_s": restart_wall,
+                    "restart/improved": int(improved),
+                    "restart/index": i,
+                }
+                restart_margins = self._compute_named_margins(result.x, constraints)
+                for name, mval in restart_margins.items():
+                    restart_log[f"restart/margin/{name}"] = mval
+                wb_run.log(restart_log, step=global_step)
 
             # Early stopping check
             if es.enabled:
@@ -361,6 +415,11 @@ class ExcitationOptimizer:
         a_opt = best_x[:n].reshape(cfg.num_joints, cfg.num_harmonics)
         b_opt = best_x[n:].reshape(cfg.num_joints, cfg.num_harmonics)
 
+        # Compute diagnostics on best solution
+        named_margins = self._compute_named_margins(best_x, constraints)
+        best_feasible = all(v >= 0 for v in named_margins.values())
+        traj_stats = self._compute_trajectory_stats(best_x, cache)
+
         opt_result = OptimizationResult(
             x_opt=best_x,
             condition_number=best_cond,
@@ -372,19 +431,30 @@ class ExcitationOptimizer:
             wall_time=wall_time,
             n_restarts=actual_restarts,
             best_start_index=best_idx,
+            constraint_margins=named_margins,
+            feasible=best_feasible,
+            trajectory_stats=traj_stats,
         )
 
         # Log final summary to wandb
         if wb_run is not None:
-            wb_run.summary.update(
-                {
-                    "final/condition_number": best_cond,
-                    "final/best_restart_index": best_idx,
-                    "final/total_restarts": actual_restarts,
-                    "final/total_func_evals": total_evals,
-                    "final/wall_time_s": wall_time,
-                }
-            )
+            summary: dict = {
+                "final/condition_number": best_cond,
+                "final/best_restart_index": best_idx,
+                "final/total_restarts": actual_restarts,
+                "final/total_func_evals": total_evals,
+                "final/wall_time_s": wall_time,
+                "final/feasible": int(best_feasible),
+            }
+            for name, margin in named_margins.items():
+                summary[f"final/margin/{name}"] = margin
+            for key, val in traj_stats.items():
+                if isinstance(val, list):
+                    for j, v in enumerate(val):
+                        summary[f"final/traj/{key}_j{j}"] = v
+                else:
+                    summary[f"final/traj/{key}"] = val
+            wb_run.summary.update(summary)
             wb_run.finish()
 
         return opt_result
