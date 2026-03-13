@@ -99,21 +99,21 @@ def main() -> None:
         target_cond=config.early_stop_target_cond,
     )
 
-    print("Starting excitation trajectory optimization...")
-    print(f"  harmonics={config.num_harmonics}, duration={config.duration}s")
-    print(f"  monte-carlo restarts={config.n_monte_carlo}")
-    print(f"  max_iter_per_start={config.max_iter}")
+    print("Starting excitation trajectory optimization...", flush=True)
+    print(f"  harmonics={config.num_harmonics}, duration={config.duration}s", flush=True)
+    print(f"  monte-carlo restarts={config.n_monte_carlo}", flush=True)
+    print(f"  max_iter_per_start={config.max_iter}", flush=True)
     if config.wandb:
-        print(f"  wandb: project={config.wandb_project}")
+        print(f"  wandb: project={config.wandb_project}", flush=True)
     if config.ee_max_linear_velocity > 0:
-        print(f"  EE velocity limit: {config.ee_max_linear_velocity} m/s")
+        print(f"  EE velocity limit: {config.ee_max_linear_velocity} m/s", flush=True)
     if config.dq_max > 0:
-        print(f"  joint velocity limit: {config.dq_max} rad/s (all joints)")
+        print(f"  joint velocity limit: {config.dq_max} rad/s (all joints)", flush=True)
     if config.early_stop:
         msg = f"  early stopping: patience={config.early_stop_patience}"
         if config.early_stop_target_cond > 0:
             msg += f", target_cond={config.early_stop_target_cond}"
-        print(msg)
+        print(msg, flush=True)
     result = optimizer.optimize(wandb_config=wandb_cfg, early_stop_config=early_stop_cfg)
 
     output_path = Path(config.output)

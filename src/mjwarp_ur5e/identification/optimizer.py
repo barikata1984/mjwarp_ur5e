@@ -271,7 +271,8 @@ class ExcitationOptimizer:
             print(
                 f"  start {i + 1}/{cfg.n_monte_carlo}: "
                 f"cond={cond:.4f}  margin={margin:.4f}  "
-                f"feasible={feasible}  ({restart_wall:.1f}s)"
+                f"feasible={feasible}  ({restart_wall:.1f}s)",
+                flush=True,
             )
 
             improved = cond < best_cond
@@ -304,7 +305,8 @@ class ExcitationOptimizer:
                 if es.target_cond > 0 and feasible and cond <= es.target_cond:
                     print(
                         f"  Early stop: target cond {es.target_cond} reached "
-                        f"(cond={cond:.4f}, feasible=True)"
+                        f"(cond={cond:.4f}, feasible=True)",
+                        flush=True,
                     )
                     break
                 # Patience-based stopping
@@ -315,7 +317,8 @@ class ExcitationOptimizer:
                 if patience_counter >= es.patience:
                     print(
                         f"  Early stop: no improvement for {es.patience} restarts "
-                        f"(best={best_cond:.4f})"
+                        f"(best={best_cond:.4f})",
+                        flush=True,
                     )
                     break
 
