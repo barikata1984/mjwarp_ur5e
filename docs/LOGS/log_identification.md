@@ -534,3 +534,82 @@ ProcessPoolExecutor (N workers)
 2. **制約の段階的評価**: 安い制約（joint limits, 純 NumPy）を先に評価し、違反なら FK 制約をスキップ
 3. **解析的 velocity/acceleration 上界**: Fourier 係数の三角不等式で FK ループを排除
 4. **並列 Monte Carlo**: restart 数を増やして feasible 解の発見確率を向上
+
+---
+
+## 2026-03-13: 1 iteration プロファイリングと診断ラン
+
+### プロファイリング結果
+
+`scripts/profile_optimizer.py` を作成し、各コンポーネントの所要時間を実測。
+
+| コンポーネント | 1 回 | 1 iter (×37 FD) | 割合 |
+|---|---|---|---|
+| collision constraint | 67.2 ms | 2.49 s | 68.5% |
+| objective (cond number) | 28.2 ms | 1.04 s | 28.8% |
+| payload workspace | 1.05 ms | 39 ms | 1.1% |
+| EE velocity | 1.01 ms | 37 ms | 1.0% |
+| workspace | 0.56 ms | 21 ms | 0.6% |
+| NumPy constraints (3つ) | 0.04 ms | 1.5 ms | ~0% |
+
+- **1 SLSQP iteration = 3.6s** (プロファイルと実測が一致)
+- collision constraint が全体の ~69% — Box-Capsule 距離計算が支配的
+- EE velocity / dq_max 制約を除外しても 3.56s/iter — これらはボトルネックではない
+
+### 診断ラン (constrained vs unconstrained 並列比較)
+
+2 つの最適化を tmux で並列実行:
+- **constrained**: dq_max=5°/s, EE vel≤0.25m/s, 全制約あり
+- **unconstrained**: dq_max/EE vel 制約なし、workspace/collision/payload 制約のみ
+
+共通設定: n_monte_carlo=5, max_iter=100, early_stop=true, patience=3, target_cond=10.0
+
+#### 結果
+
+| | unconstrained | constrained |
+|---|---|---|
+| 条件数 | **2.11** | **2.74** |
+| feasible | No (margin=-0.004) | No (全 restart infeasible) |
+| 最大関節速度 | 125°/s | 51.6°/s |
+| 最大 EE 線速度 | 86.3 cm/s | 54.2 cm/s |
+| wall time | 1596s (27min, 4 restart) | 2015s (34min, 5 restart) |
+| best restart | #0 | #4 |
+
+wandb ラン: `constrained-diag`, `unconstrained-diag` (project: `ur5e-excitation`)
+
+#### constrained 各 restart
+
+| restart | cond | margin | feasible | time |
+|---|---|---|---|---|
+| 1 | 7.28 | -0.243 | No | 401s |
+| 2 | 3.73 | -0.530 | No | 405s |
+| 3 | 6.78 | -0.589 | No | 403s |
+| 4 | — | — | — | — |
+| 5 | **2.74** | — | No | — |
+
+#### unconstrained 各 restart
+
+| restart | cond | margin | feasible | time |
+|---|---|---|---|---|
+| 1 | **2.11** | -0.004 | No | 397s |
+| 2 | 2.20 | -0.024 | No | 398s |
+| 3 | 2.12 | -0.078 | No | 396s |
+| 4 (patience stop) | 2.26 | — | No | — |
+
+### 分析
+
+1. **SLSQP は制約を無視しているのではない**: constrained で dq_max=5°/s を要求 → 125°/s (無制約) から 51.6°/s まで低下。制約を尊重しようとしているが 100 iteration では到達しない
+2. **unconstrained でも全 restart infeasible**: collision/workspace 制約だけでも feasible 解を見つけられない (ただし margin=-0.004 と極めて僅差)
+3. **SLSQP は本問題に不適切**: 有限差分ベースの局所勾配法では、36 変数の非凸空間で狭い feasible 領域を探索できない
+
+### 結論: 最適化アルゴリズムの変更が最優先
+
+SLSQP の問題:
+- 有限差分で 36+1=37 回/iter の関数評価 (うち collision が 69%)
+- 局所探索のみ、restart 間の情報共有なし
+- 制約付き非凸問題で feasible 領域に到達困難
+
+候補アルゴリズム:
+1. **COBYLA**: 有限差分不要 → 1 iter あたり ~37 倍速い iteration
+2. **Differential Evolution**: scipy 組込み、大域探索、制約対応
+3. **CMA-ES + augmented Lagrangian**: 文献でも excitation optimization に使用実績

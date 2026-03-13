@@ -7,35 +7,45 @@
 - `attachment_site` を基準とした wrench 観測モデルをどう定義するか未決定
 - 現在は `payload_box_mount` body frame 基準で回帰行列を構築している
 
-## 最適化結果が全て infeasible
+## SLSQP では feasible 解が得られない
 
-- **影響**: Config D の全 9 restart が infeasible (feasible=False)
-- **制約マージン例**: velocity=-0.40, acceleration=-4.50, workspace=-0.03, payload_workspace=-0.35, collision=-0.10
+- **影響**: duration=3s, harmonics=3 の設定でも、constrained / unconstrained 両方で全 restart が infeasible
+- **根本原因**: SLSQP (有限差分ベース局所勾配法) が制約付き非凸最適化問題に不適切
 
-### 調査結果 (2026-03-13)
+### プロファイリング結果 (2026-03-13)
 
-- `subsample_factor` は**目的関数（条件数計算）にのみ適用**。制約関数は既に全 1001 timestep で評価されており、「制約の見逃し」ではない
-- 制約評価（workspace/payload_workspace/collision の FK ループ各 1000 回）が 1 iteration あたりの計算コストの ~97% を占め、目的関数の subsample 変更は全体に僅少な影響
-- **duration=10s が過剰**: Kubus et al. (2008) は duration=1.5s, harmonics=3, max_freq=2Hz で κ=7-8 を達成。短い duration で timestep 数が線形に減り計算コストも線形に減少
-- 真の原因は SLSQP が広い探索空間（60 変数 = 6 joints × 5 harmonics × 2 coeffs）で feasible 領域内の良い解を見つけられないこと
+| コンポーネント | 1 回 | 1 iter (×37 FD) | 割合 |
+|---|---|---|---|
+| collision constraint | 67 ms | 2.49 s | 69% |
+| objective (cond number) | 28 ms | 1.04 s | 29% |
+| workspace / payload / EE vel | 2.6 ms | 97 ms | 3% |
+| NumPy constraints (pos/vel/acc) | 0.04 ms | 1.5 ms | ~0% |
 
-### 対策の実施状況 (2026-03-13)
+- **1 SLSQP iteration = 3.6s**, 100 iter/restart = ~400s/restart
+- collision constraint が圧倒的ボトルネック (全体の 69%)
 
-- **duration 短縮 + harmonics 削減**: 実施済み (duration=3.0s, harmonics=3, 変数 60→36)
-- **EE 線速度制約 / 関節速度制約**: 実施済み (≤0.25 m/s, ≤5 deg/s)
-- **目標条件数 early stop**: 実施済み (κ≤5 + feasible で停止)
+### 診断ラン結果 (2026-03-13)
 
-### 残存問題: 最適化が 30 分以上で最初の restart が完了しない
+| | unconstrained | constrained (dq≤5°/s, EE≤25cm/s) |
+|---|---|---|
+| 条件数 | **2.11** | **2.74** |
+| feasible | No (margin=-0.004) | No (全 restart infeasible) |
+| 最大関節速度 | 125°/s | 51.6°/s |
+| 最大 EE 線速度 | 86.3 cm/s | 54.2 cm/s |
+| wall time | 27 min (4 restart) | 34 min (5 restart) |
 
-- 原因候補: (1) dq_max=0.0873 rad/s の厳しさにより SLSQP の収束が遅い (2) FK ベース制約 (workspace/payload/collision/EE velocity) × 301 点 × 37 回/iteration (有限差分) ≈ 55,000 FK/iteration が重い (3) stdout バッファリングで出力が見えないだけで実は動いている可能性
-- **次のアクション**: 1 iteration の所要時間を実測し、ボトルネックを特定する
+- SLSQP は制約を無視しているのではなく、**満たそうとしているが 100 iteration では収束しない**
+- constrained: dq_max=5°/s を要求 → 51.6°/s まで下がったが未到達
+- unconstrained: collision/workspace 制約だけでもほぼ feasible (margin=-0.004) だが到達せず
 
-### 対策案（優先順、更新版）
+### 対策 (次セッション)
 
-1. **1 iteration のプロファイリング**: 実測なしに推測で最適化するのは非効率
-2. **制約の段階的評価**: 安い制約（joint limits, 純 NumPy）を先に評価し、違反なら高い FK 制約をスキップ
-3. **解析的 velocity/acceleration 上界**: Fourier 係数の三角不等式で FK ループを排除
-4. **並列 Monte Carlo**: restart 数を増やして feasible 解の発見確率を向上（設計済み）
+1. **最適化アルゴリズムの変更** (最優先)
+   - COBYLA: 有限差分不要 → 1 iter あたり 37x 高速、ただし局所的
+   - Differential Evolution (scipy 組込み): 大域探索、制約対応あり
+   - CMA-ES + augmented Lagrangian: 文献でも使用実績あり
+2. collision constraint の高速化 (FK ループ共有化)
+3. 制約の段階的評価
 
 ## `EarlyStopConfig.min_improvement` 未使用
 
