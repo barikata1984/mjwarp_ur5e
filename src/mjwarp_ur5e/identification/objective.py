@@ -7,6 +7,27 @@ from .constraints import _TrajectoryCache, build_trajectory_from_params
 from .regressor import compute_condition_number, compute_stacked_body_regressor
 
 
+def _compute_stacked_regressor(
+    x: np.ndarray,
+    cache: _TrajectoryCache,
+    model: mujoco.MjModel,
+    data: mujoco.MjData,
+    body_name: str,
+    subsample_factor: int,
+) -> np.ndarray:
+    """Build stacked regressor from coefficient vector (shared by objectives)."""
+    sample = cache.get(x)
+    return compute_stacked_body_regressor(
+        model,
+        data,
+        sample.position,
+        sample.velocity,
+        sample.acceleration,
+        body_name,
+        subsample_factor=subsample_factor,
+    )
+
+
 def condition_number_objective(
     x: np.ndarray,
     cache: _TrajectoryCache,
@@ -21,19 +42,63 @@ def condition_number_objective(
     crashing the optimizer.
     """
     try:
-        sample = cache.get(x)
-        stacked = compute_stacked_body_regressor(
-            model,
-            data,
-            sample.position,
-            sample.velocity,
-            sample.acceleration,
-            body_name,
-            subsample_factor=subsample_factor,
-        )
+        stacked = _compute_stacked_regressor(x, cache, model, data, body_name, subsample_factor)
         return compute_condition_number(stacked)
     except (np.linalg.LinAlgError, ValueError):
         return 1e12
+
+
+def d_optimal_objective(
+    x: np.ndarray,
+    cache: _TrajectoryCache,
+    model: mujoco.MjModel,
+    data: mujoco.MjData,
+    body_name: str,
+    subsample_factor: int,
+) -> float:
+    """D-optimal objective: -log det(W^T W) = -2 * sum(log(sigma_i)).
+
+    Smooth (C^∞) alternative to condition number minimization.
+    Maximizes the volume of the information ellipsoid, encouraging all
+    singular values to be large rather than just minimizing their ratio.
+
+    Returns a large finite value (1e12) on numerical failure.
+    """
+    try:
+        stacked = _compute_stacked_regressor(x, cache, model, data, body_name, subsample_factor)
+        sv = np.linalg.svd(stacked, compute_uv=False)
+        # Floor tiny singular values to avoid log(0)
+        sv_floored = np.maximum(sv, 1e-30)
+        return -2.0 * np.sum(np.log(sv_floored))
+    except (np.linalg.LinAlgError, ValueError):
+        return 1e12
+
+
+def d_optimal_with_cond(
+    x: np.ndarray,
+    cache: _TrajectoryCache,
+    model: mujoco.MjModel,
+    data: mujoco.MjData,
+    body_name: str,
+    subsample_factor: int,
+) -> tuple[float, float]:
+    """Compute D-optimal objective and condition number from a single SVD.
+
+    Returns (d_optimal_value, condition_number). Avoids the cost of building
+    the stacked regressor twice when both values are needed.
+    """
+    try:
+        stacked = _compute_stacked_regressor(x, cache, model, data, body_name, subsample_factor)
+        sv = np.linalg.svd(stacked, compute_uv=False)
+        sv_floored = np.maximum(sv, 1e-30)
+        d_opt = -2.0 * np.sum(np.log(sv_floored))
+        if sv[-1] < 1e-12:
+            cond = float("inf")
+        else:
+            cond = float(sv[0] / sv[-1])
+        return d_opt, cond
+    except (np.linalg.LinAlgError, ValueError):
+        return 1e12, 1e12
 
 
 def evaluate_full_resolution(

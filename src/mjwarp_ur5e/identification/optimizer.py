@@ -16,6 +16,7 @@ from mjwarp_ur5e.identification.constraints import (
 )
 from mjwarp_ur5e.identification.objective import (
     condition_number_objective,
+    d_optimal_with_cond,
     evaluate_full_resolution,
 )
 from mjwarp_ur5e.identification.workspace import EeVelocityConfig, WorkspaceConstraintConfig
@@ -36,6 +37,7 @@ class OptimizerConfig:
     subsample_factor: int = 10
     n_monte_carlo: int = 20
     max_iter_per_start: int = 200
+    objective_type: str = "d_optimal"  # "d_optimal" or "condition_number"
     optimizer_method: str = "SLSQP"
     ftol: float = 1e-6
     seed: int = 42
@@ -99,6 +101,7 @@ def _config_to_wandb_dict(cfg: OptimizerConfig) -> dict:
         "subsample_factor": cfg.subsample_factor,
         "n_monte_carlo": cfg.n_monte_carlo,
         "max_iter_per_start": cfg.max_iter_per_start,
+        "objective_type": cfg.objective_type,
         "optimizer_method": cfg.optimizer_method,
         "ftol": cfg.ftol,
         "seed": cfg.seed,
@@ -213,16 +216,27 @@ class ExcitationOptimizer:
         es = early_stop_config or EarlyStopConfig()
         patience_counter = 0
 
-        # Track the latest objective value from the objective function closure.
-        # This avoids re-evaluating the objective inside the callback.
+        # Track the latest objective value and condition number.
+        # _latest_obj: raw objective value (D-optimal or cond number)
+        # _latest_cond: condition number (always tracked for reporting)
+        _latest_obj: list[float] = [float("inf")]
         _latest_cond: list[float] = [float("inf")]
 
+        use_d_optimal = cfg.objective_type == "d_optimal"
+
         def objective(x: np.ndarray) -> float:
-            val = condition_number_objective(
-                x, cache, self.model, self.data, cfg.body_name, cfg.subsample_factor
-            )
-            _latest_cond[0] = val
-            return val
+            if use_d_optimal:
+                obj_val, cond_val = d_optimal_with_cond(
+                    x, cache, self.model, self.data, cfg.body_name, cfg.subsample_factor
+                )
+            else:
+                cond_val = condition_number_objective(
+                    x, cache, self.model, self.data, cfg.body_name, cfg.subsample_factor
+                )
+                obj_val = cond_val
+            _latest_obj[0] = obj_val
+            _latest_cond[0] = cond_val
+            return obj_val
 
         rng = np.random.default_rng(cfg.seed)
         best_x: np.ndarray | None = None
@@ -244,9 +258,11 @@ class ExcitationOptimizer:
                 global_step += 1
                 iter_in_restart[0] += 1
                 cond_val = _latest_cond[0]
+                obj_val = _latest_obj[0]
                 if wb_run is not None:
                     log_dict: dict = {
                         "iter/condition_number": cond_val,
+                        "iter/objective": obj_val,
                         "iter/restart_index": i,
                         "iter/iter_in_restart": iter_in_restart[0],
                         "iter/wall_time": time.perf_counter() - t0,
@@ -263,17 +279,33 @@ class ExcitationOptimizer:
             )
             total_evals += result.nfev
             actual_restarts += 1
-            cond = float(result.fun)
             restart_wall = time.perf_counter() - restart_t0
             margin = self._compute_constraint_margin(result.x, constraints)
             feasible = margin >= 0
 
-            print(
-                f"  start {i + 1}/{cfg.n_monte_carlo}: "
-                f"cond={cond:.4f}  margin={margin:.4f}  "
-                f"feasible={feasible}  ({restart_wall:.1f}s)",
-                flush=True,
-            )
+            # Evaluate condition number for reporting (reuse cached trajectory)
+            if use_d_optimal:
+                _, cond = d_optimal_with_cond(
+                    result.x, cache, self.model, self.data, cfg.body_name, cfg.subsample_factor
+                )
+            else:
+                cond = float(result.fun)
+            obj_val = float(result.fun)
+
+            if use_d_optimal:
+                print(
+                    f"  start {i + 1}/{cfg.n_monte_carlo}: "
+                    f"cond={cond:.4f}  D-opt={obj_val:.4f}  margin={margin:.4f}  "
+                    f"feasible={feasible}  ({restart_wall:.1f}s)",
+                    flush=True,
+                )
+            else:
+                print(
+                    f"  start {i + 1}/{cfg.n_monte_carlo}: "
+                    f"cond={cond:.4f}  margin={margin:.4f}  "
+                    f"feasible={feasible}  ({restart_wall:.1f}s)",
+                    flush=True,
+                )
 
             improved = cond < best_cond
             if improved:
@@ -287,6 +319,7 @@ class ExcitationOptimizer:
                 wb_run.log(
                     {
                         "restart/condition_number": cond,
+                        "restart/objective": obj_val,
                         "restart/global_best_cond": best_cond,
                         "restart/constraint_margin_min": margin,
                         "restart/feasible": int(feasible),

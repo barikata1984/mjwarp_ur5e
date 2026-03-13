@@ -80,6 +80,7 @@ class OptimizeExcitationConfig(ModelConfig):
     enable_payload_workspace: bool = True
     ee_max_linear_velocity: float = 0.25  # m/s, 0 to disable
     dq_max: float = 0.0873  # rad/s (~5 deg/s), uniform limit for all joints (0 to use defaults)
+    objective: str = "d_optimal"  # "d_optimal" or "condition_number"
     output: str = "results/excitation_result.json"
     trajectory_output: str = "results/excitation_trajectory.json"
     trajectory_fps: float = 0.0

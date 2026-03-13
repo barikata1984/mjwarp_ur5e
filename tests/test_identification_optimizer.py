@@ -16,6 +16,7 @@ from mjwarp_ur5e.identification.io import (  # noqa: E402
 )
 from mjwarp_ur5e.identification.objective import (  # noqa: E402
     condition_number_objective,
+    d_optimal_objective,
 )
 from mjwarp_ur5e.identification.optimizer import (  # noqa: E402
     ExcitationOptimizer,
@@ -93,6 +94,60 @@ def test_objective_returns_large_value_for_zero_coefficients() -> None:
     assert cond == float("inf") or cond > 1e6
 
 
+# --- D-optimal objective tests ---
+
+
+def test_d_optimal_returns_finite_for_random_coefficients() -> None:
+    loaded = _load_scene()
+    cache = _make_cache()
+    x = _make_x(scale=0.05)
+
+    val = d_optimal_objective(
+        x,
+        cache,
+        loaded.model,
+        loaded.data,
+        body_name="payload_box_mount",
+        subsample_factor=5,
+    )
+    assert np.isfinite(val)
+
+
+def test_d_optimal_returns_large_value_for_zero_coefficients() -> None:
+    loaded = _load_scene()
+    cache = _make_cache()
+    x = np.zeros(2 * NUM_JOINTS * NUM_HARMONICS)
+
+    val = d_optimal_objective(
+        x,
+        cache,
+        loaded.model,
+        loaded.data,
+        body_name="payload_box_mount",
+        subsample_factor=5,
+    )
+    # Degenerate trajectory → near-zero singular values → large positive D-optimal value
+    assert val > 100
+
+
+def test_d_optimal_decreases_with_better_trajectory() -> None:
+    """A trajectory with better excitation should have a lower (more negative) D-optimal value."""
+    loaded = _load_scene()
+    cache = _make_cache()
+
+    x_small = _make_x(scale=0.01, seed=0)
+    x_larger = _make_x(scale=0.05, seed=0)
+
+    val_small = d_optimal_objective(
+        x_small, cache, loaded.model, loaded.data, "payload_box_mount", 5
+    )
+    val_larger = d_optimal_objective(
+        x_larger, cache, loaded.model, loaded.data, "payload_box_mount", 5
+    )
+    # Larger amplitude → better excitation → larger singular values → more negative D-optimal
+    assert val_larger < val_small
+
+
 # --- OptimizerConfig tests ---
 
 
@@ -108,6 +163,7 @@ def test_optimizer_config_defaults() -> None:
     assert cfg.subsample_factor == 10
     assert cfg.n_monte_carlo == 20
     assert cfg.max_iter_per_start == 200
+    assert cfg.objective_type == "d_optimal"
     assert cfg.optimizer_method == "SLSQP"
     assert cfg.ftol == 1e-6
     assert cfg.seed == 42
@@ -172,6 +228,32 @@ def test_optimize_smoke() -> None:
     assert result.wall_time > 0
     assert result.n_restarts == 2
     assert 0 <= result.best_start_index < 2
+
+
+def test_optimize_smoke_d_optimal() -> None:
+    loaded = _load_scene()
+    cfg = OptimizerConfig(
+        num_joints=NUM_JOINTS,
+        num_harmonics=NUM_HARMONICS,
+        base_freq=BASE_FREQ,
+        duration=DURATION,
+        fps=FPS,
+        q0=Q0,
+        subsample_factor=10,
+        n_monte_carlo=2,
+        max_iter_per_start=5,
+        objective_type="d_optimal",
+        seed=123,
+    )
+    opt = ExcitationOptimizer(cfg, loaded.model, loaded.data)
+    result = opt.optimize()
+
+    assert isinstance(result, OptimizationResult)
+    assert result.x_opt.shape == (2 * NUM_JOINTS * NUM_HARMONICS,)
+    # condition_number is always reported regardless of objective_type
+    assert np.isfinite(result.condition_number)
+    assert result.condition_number > 0
+    assert result.n_restarts == 2
 
 
 # --- JSON round-trip tests ---

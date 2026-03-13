@@ -78,6 +78,7 @@ def main() -> None:
         subsample_factor=config.subsample_factor,
         n_monte_carlo=config.n_monte_carlo,
         max_iter_per_start=config.max_iter,
+        objective_type=config.objective,
         seed=config.seed,
         joint_limits=joint_limits,
         workspace_config=workspace_config,
@@ -100,6 +101,7 @@ def main() -> None:
     )
 
     print("Starting excitation trajectory optimization...", flush=True)
+    print(f"  objective={config.objective}", flush=True)
     print(f"  harmonics={config.num_harmonics}, duration={config.duration}s", flush=True)
     print(f"  monte-carlo restarts={config.n_monte_carlo}", flush=True)
     print(f"  max_iter_per_start={config.max_iter}", flush=True)
