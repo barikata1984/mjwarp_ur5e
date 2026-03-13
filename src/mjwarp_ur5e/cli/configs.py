@@ -81,6 +81,13 @@ class OptimizeExcitationConfig(ModelConfig):
     output: str = "results/excitation_result.json"
     trajectory_output: str = "results/excitation_trajectory.json"
     trajectory_fps: float = 0.0
+    # wandb logging
+    wandb: bool = False
+    wandb_project: str = "ur5e-excitation"
+    wandb_run_name: str | None = None
+    # early stopping
+    early_stop: bool = False
+    early_stop_patience: int = 5
 
 
 @dataclass(slots=True)

@@ -13,7 +13,12 @@ from mjwarp_ur5e.identification.io import (
     save_optimization_result,
     save_trajectory_json,
 )
-from mjwarp_ur5e.identification.optimizer import ExcitationOptimizer, OptimizerConfig
+from mjwarp_ur5e.identification.optimizer import (
+    EarlyStopConfig,
+    ExcitationOptimizer,
+    OptimizerConfig,
+    WandbConfig,
+)
 from mjwarp_ur5e.identification.workspace import WorkspaceConstraintConfig
 from mjwarp_ur5e.model import get_named_object_id, load_and_reset
 
@@ -67,11 +72,25 @@ def main() -> None:
 
     optimizer = ExcitationOptimizer(config=opt_config, model=loaded.model, data=loaded.data)
 
+    wandb_cfg = WandbConfig(
+        enabled=config.wandb,
+        project=config.wandb_project,
+        run_name=config.wandb_run_name,
+    )
+    early_stop_cfg = EarlyStopConfig(
+        enabled=config.early_stop,
+        patience=config.early_stop_patience,
+    )
+
     print("Starting excitation trajectory optimization...")
     print(f"  harmonics={config.num_harmonics}, duration={config.duration}s")
     print(f"  monte-carlo restarts={config.n_monte_carlo}")
     print(f"  max_iter_per_start={config.max_iter}")
-    result = optimizer.optimize()
+    if config.wandb:
+        print(f"  wandb: project={config.wandb_project}")
+    if config.early_stop:
+        print(f"  early stopping: patience={config.early_stop_patience}")
+    result = optimizer.optimize(wandb_config=wandb_cfg, early_stop_config=early_stop_cfg)
 
     output_path = Path(config.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
