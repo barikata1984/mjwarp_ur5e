@@ -669,3 +669,104 @@ SLSQP が feasible 解を返さない問題に対し、アルゴリズム選択�
 - [[Tian2024_virtual_constraints]](../REFERENCES/MAIN.md#Tian2024_virtual_constraints) — グラミアン代理指標 + IPOPT
 - [[Calafiore2001_calibration]](../REFERENCES/MAIN.md#Calafiore2001_calibration) — D-optimal 基準の実験的検証
 - [[Kubus2008_rtls]](../REFERENCES/MAIN.md#Kubus2008_rtls) — 回帰行列構成の基礎文献
+
+---
+
+## 2026-03-13: D-optimal 目的関数の実装と診断ラン
+
+### 実装内容
+
+`objective.py` に D-optimal 目的関数を追加し、`optimizer.py` で `objective_type` による切替を実装した。
+
+#### `d_optimal_objective()` — `objective.py`
+
+- 目的関数値: `-2 * Σ log(σ_i)` （リグレッサの全特異値の対数和の符号反転）
+- C^∞ で滑らか（条件数と異なり特異値交差点での kink がない）
+- 特異値フロア `1e-30` で log(0) を回避
+
+#### `d_optimal_with_cond()` — `objective.py`
+
+- 1 回の SVD から D-optimal 値と条件数の両方を返すヘルパー
+- `optimizer.py` が D-optimal で最適化しつつ条件数をバリデーション指標として報告するために使用
+
+#### `optimizer.py` の変更
+
+- `OptimizerConfig.objective_type`: `"d_optimal"` (デフォルト) / `"condition_number"`
+- `optimize()` 内で `d_optimal_with_cond()` または `condition_number_objective()` を自動切替
+- 条件数は `objective_type` に関わらず常にトラッキング
+
+#### CLI — `configs.py`, `optimize_excitation_trajectory.py`
+
+- `--objective` フラグ: `"d_optimal"` / `"condition_number"`
+- デフォルトを `d_optimal` に変更
+
+### 診断ラン結果: D-optimal vs condition_number
+
+2 つの D-optimal 診断ランを tmux 並列実行（n_mc=5, max_iter=100, early_stop, patience=3）:
+
+#### D-optimal 目的関数
+
+| | unconstrained | constrained (dq≤5°/s, EE≤25cm/s) |
+|---|---|---|
+| 条件数 | **10.72** | **6.68** |
+| D-opt 値 | -157.3 | -153.0 |
+| feasible | No (margin=-27.0) | No (margin=-60.3) |
+| wall time | 1992s (33min) | 1754s (29min) |
+| restarts | 5/5 | 5/5 (patience stop) |
+
+#### 比較: condition_number 目的関数（前回）
+
+| | unconstrained | constrained |
+|---|---|---|
+| 条件数 | **2.11** | **2.74** |
+| feasible | No (margin=-0.004) | No (全 infeasible) |
+
+### 制約別違反分析
+
+D-optimal 結果に対し、制約ごとのマージンを個別評価:
+
+| 制約 | unconstrained margin | constrained margin |
+|---|---|---|
+| joint_position | +1.49 (OK) | +2.47 (OK) |
+| joint_velocity | **-3.56** | **-5.72** |
+| joint_acceleration | **-27.03** | **-60.29** |
+| workspace_ee | **-0.04** | **-0.19** |
+| collision | **-0.11** | **-0.11** |
+
+### 根本原因の特定: 文献との差異分析
+
+D-optimal 目的関数は文献（Calafiore 2001, Lee 2021）では成功しているが、本プロジェクトでは全 restart が infeasible。体系的に文献との差異を調査した結果、以下が判明:
+
+#### 1. 制約の種類が根本的に異なる
+
+| 制約 | 文献 (Swevers, Lee, Calafiore, Kubus, Tian, Rackl) | 本プロジェクト |
+|---|---|---|
+| 関節位置 | Yes | Yes |
+| 関節速度 | Yes (一部) | Yes |
+| 関節加速度 | Yes (一部) | Yes |
+| **EE ワークスペース変位** | **No** | **Yes** (≤0.5m) |
+| **衝突回避** | **No** | **Yes** (自己衝突+地面+ペイロード) |
+
+調査した6本の論文のいずれも衝突回避やワークスペース変位制約を使用していない。
+
+#### 2. D-optimal が係数を制限の33倍まで押し込む
+
+D-optimal は情報量（全特異値の積）を最大化するため、大きな振幅を要求する。Fourier 第3高調波の加速度安全上限は係数 0.20 rad だが、最適化結果は 6.64 rad まで到達（33倍超過）。
+
+#### 3. 根本原因の修正
+
+前回セッションの結論「目的関数の非滑らかさが主因」は不正確であった。真の根本原因は:
+
+> **探索空間が制約に対して広すぎる**。SLSQP はバウンド制約なしの広い空間で、文献にない衝突・ワークスペース制約の狭い feasible 領域を見つけられない。目的関数の滑らかさ改善は副次的効果に留まる。
+
+### 対策の優先順位再編
+
+| 順位 | 施策 | 理由 |
+|---|---|---|
+| **1** | 解析的 Fourier 係数バウンド（三角不等式） | 加速度違反が最大の違反源。バウンドで vel/acc 違反を構造的に排除 |
+| **2** | 制約の段階的評価（安い制約で早期棄却） | collision/workspace の非凸制約評価回数を削減 |
+| **3** | collision constraint の高速化 | 全体の 69% を占めるボトルネック |
+| **4** | アルゴリズム変更 (COBYLA/IPOPT) | バウンド導入後に再評価。探索空間の縮小で SLSQP でも動く可能性 |
+| **5** | 並列 Monte Carlo | 正解性ではなく速度の問題 |
+
+D-optimal 目的関数は実装済みのため維持するが、feasibility 改善の主要因ではないことが判明した。

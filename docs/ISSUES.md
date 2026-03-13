@@ -38,16 +38,20 @@
 - constrained: dq_max=5°/s を要求 → 51.6°/s まで下がったが未到達
 - unconstrained: collision/workspace 制約だけでもほぼ feasible (margin=-0.004) だが到達せず
 
-### 文献調査に基づく対策 (2026-03-13)
+### 文献との差異分析 (2026-03-13)
 
-詳細: `docs/LOGS/log_identification.md` (2026-03-13: 最適化アルゴリズムの文献調査と適切性評価)
+D-optimal 目的関数を実装・診断した結果、目的関数の滑らかさは副次的であり、根本原因は以下と判明:
 
-1. **目的関数を D-optimal 基準に変更** (最優先) — `-log det(W^T W)` は C^∞ で滑らか、有限差分勾配の精度向上
-   - [[Calafiore2001_calibration]](REFERENCES/MAIN.md#Calafiore2001_calibration), [[Lee2021_excitation_geometric]](REFERENCES/MAIN.md#Lee2021_excitation_geometric)
-2. **ソルバ変更**: COBYLA (有限差分不要)、CMA-ES + SLSQP ハイブリッド、IPOPT (解析的勾配)
-   - [[Tian2024_virtual_constraints]](REFERENCES/MAIN.md#Tian2024_virtual_constraints): IPOPT で cond=51/10min
-3. collision constraint の高速化 (FK ループ共有化)
-4. 制約の段階的評価
+1. **探索空間が制約に対して広すぎる**: D-optimal が Fourier 係数を制限の33倍まで押し込む（加速度 margin=-27）
+2. **文献にない制約**: 衝突回避・ワークスペース変位は調査した6論文のいずれも使用していない
+3. **SLSQP がバウンドなしの広い空間で非凸 feasible 領域を探索できない**
+
+### 対策（優先順位順）
+
+1. **解析的 Fourier 係数バウンド** (最優先) — 三角不等式で vel/acc 上界を `bounds` として設定し、探索空間を構造的に制限
+2. 制約の段階的評価（安い制約で早期棄却）
+3. collision constraint の高速化
+4. アルゴリズム変更 — バウンド導入後に SLSQP で feasible 解が得られるか再評価してから判断
 
 ## `EarlyStopConfig.min_improvement` 未使用
 
