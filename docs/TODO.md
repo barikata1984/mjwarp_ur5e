@@ -26,7 +26,8 @@
 - [x] 最適化の 1 iteration 所要時間の実測プロファイリング
 - [x] stdout flush 対応 (`print(..., flush=True)`)
 - [x] 診断ラン実施 (constrained / unconstrained 並列比較)
-- [ ] **最適化アルゴリズムの変更** (SLSQP → COBYLA or DE or CMA-ES)
+- [ ] **目的関数を D-optimal 基準に変更** (`-log det(W^T W)`, 条件数はバリデーション指標に)
+- [ ] **最適化アルゴリズムの変更** (SLSQP → COBYLA or CMA-ES+SLSQP or IPOPT)
 - [ ] 制約の段階的評価（安い制約で早期棄却し FK ループをスキップ）
 - [ ] 解析的 velocity/acceleration 上界の導入 (Fourier 係数の三角不等式)
 - [ ] 並列 Monte Carlo 最適化の実装 (`ProcessPoolExecutor`, 設計済み)

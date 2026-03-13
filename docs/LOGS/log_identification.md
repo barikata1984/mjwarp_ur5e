@@ -613,3 +613,59 @@ SLSQP の問題:
 1. **COBYLA**: 有限差分不要 → 1 iter あたり ~37 倍速い iteration
 2. **Differential Evolution**: scipy 組込み、大域探索、制約対応
 3. **CMA-ES + augmented Lagrangian**: 文献でも excitation optimization に使用実績
+
+---
+
+## 2026-03-13: 最適化アルゴリズムの文献調査と適切性評価
+
+### 調査動機
+
+SLSQP が feasible 解を返さない問題に対し、アルゴリズム選択の妥当性を文献に照らして評価した。
+
+### 問題の性質の整理
+
+| 項目 | 内容 |
+|---|---|
+| 決定変数 | フーリエ係数 a_{j,k}, b_{j,k} → 2 × 6 × N_h 個 (N_h=5 で 60, N_h=3 で 36) |
+| 軌道表現 | q(t) = q0 + w(t) × Σ[a sin(kωt) + b cos(kωt)]、窓関数で境界条件自動満足 |
+| 目的関数 | cond(W) = σ_max / σ_min（リグレッサ行列の条件数） |
+| 制約 | 関節位置/速度/加速度、ワークスペース、衝突回避、EE 速度 — 非線形不等式制約 |
+| 現行手法 | Multi-start SLSQP (有限差分勾配) |
+
+### SLSQP の問題点（文献に基づく分析）
+
+現行手法は [[Swevers1997_excitation]](../REFERENCES/MAIN.md#Swevers1997_excitation) の SQP アプローチを直接踏襲している。しかし以下の問題がある:
+
+1. **条件数は非平滑**: σ_max/σ_min は特異値の「担い手」が入れ替わる点で微分不可能。有限差分勾配がこの kink 付近で不正確になる
+2. **有限差分コスト**: 36 変数で 1 勾配あたり 37 回の関数評価。collision constraint が 69% を占めるため 1 iter = 3.6s
+3. **局所最適**: 非凸問題に対しマルチスタートで対処しているが効率が悪い
+
+### 推奨改善策
+
+#### 1. 目的関数を D-optimal 基準に変更（最優先）
+
+`minimize -log det(W^T W) = -2 Σ log(σ_i)`
+
+- [[Calafiore2001_calibration]](../REFERENCES/MAIN.md#Calafiore2001_calibration) が実験的有効性を実証
+- [[Lee2021_excitation_geometric]](../REFERENCES/MAIN.md#Lee2021_excitation_geometric) が理論的正当性を示す
+- 条件数と異なり全特異値が正である限り C^∞ で滑らか → 有限差分勾配の精度が向上
+- 条件数はバリデーション指標として報告すればよい
+
+#### 2. ソルバの改善
+
+- **短期**: 目的関数を D-optimal に変えるだけで SLSQP の収束改善が見込める
+- **中期**: [[Tian2024_virtual_constraints]](../REFERENCES/MAIN.md#Tian2024_virtual_constraints) が示すように CasADi + IPOPT で解析的勾配を供給すれば大幅に高品質な解を短時間で得られる (同論文: cond=51/10min vs メメティック法 57890/60min超)
+- **代替**: CMA-ES でグローバル探索 → SLSQP でローカル研磨のハイブリッド
+
+#### 3. ドロップイン改善
+
+- `log(cond(W))` への変更 — スケール安定化
+- `method='COBYLA'` — 有限差分不要、非平滑目的に robust
+
+### 参考文献
+
+- [[Swevers1997_excitation]](../REFERENCES/MAIN.md#Swevers1997_excitation) — フーリエ級数 + SQP の原論文
+- [[Lee2021_excitation_geometric]](../REFERENCES/MAIN.md#Lee2021_excitation_geometric) — 幾何学的基準・解析的勾配
+- [[Tian2024_virtual_constraints]](../REFERENCES/MAIN.md#Tian2024_virtual_constraints) — グラミアン代理指標 + IPOPT
+- [[Calafiore2001_calibration]](../REFERENCES/MAIN.md#Calafiore2001_calibration) — D-optimal 基準の実験的検証
+- [[Kubus2008_rtls]](../REFERENCES/MAIN.md#Kubus2008_rtls) — 回帰行列構成の基礎文献
