@@ -870,3 +870,67 @@ wandb ラン: `fourier-bounds-dq2-T5` (run ID: q25kplzw)
 1. **線形制約への拡張**: 均等配分ではなく `Σ_k (|a_{j,k}| + |b_{j,k}|) * α_k ≤ dq_max_j` を線形制約として直接実装 → バウンドの保守性を低減
 2. **高調波数の増加**: harmonics=3→5 で表現力向上（ただし計算コスト増）
 3. **feasibility 閾値の導入**: margin > -1e-6 を feasible とみなす実用的判定
+
+---
+
+## 2026-03-13: harmonics=3 vs harmonics=5 比較実験
+
+### 目的
+
+Fourier バウンド (dq_max=2.0 rad/s) 下で高調波数の影響を比較する。
+
+### 共通設定
+
+- duration=5.0s, base_freq=1/3 Hz, dq_max=2.0 rad/s
+- D-optimal 目的関数, Fourier bounds 有効, 加速度制約なし, EE 速度制約なし
+- n_monte_carlo=20, max_iter=100, early_stop (patience=10, target_cond=5.0)
+
+### 結果
+
+| | h3 (harmonics=3) | h5 (harmonics=5) |
+|---|---|---|
+| wandb ラン | `h3-100iter` (q33flt3k) | `h5-100iter` (xkvsvxlk) |
+| 決定変数 | 36 | 60 |
+| **条件数** | **6.87** | **5.44** |
+| D-opt 値 | -95.0 | -98.3 |
+| feasible | No (margin=-3e-7) | **Yes** |
+| wall time | 2913s (~49min) | 2792s (~47min) |
+| restarts 完了 | 11/20 (patience stop) | 20/20 |
+| evaluations | 17,286 | 16,382 |
+| dq_max 実測 | 1.09 rad/s | 1.03 rad/s |
+| ddq_max 実測 | 5.22 rad/s² | 7.29 rad/s² |
+| collision margin | +0.007 | +0.025 |
+| payload_workspace margin | -3e-7 | 0.000 |
+
+### h5 制約マージン詳細
+
+| 制約 | マージン | 状態 |
+|---|---|---|
+| joint_position | +4.53 | OK |
+| workspace | +0.27 | OK |
+| payload_workspace | 0.000 | OK (境界上) |
+| collision | +0.025 | OK (2.5cm 余裕) |
+
+### h5 軌道統計
+
+| 指標 | 値 |
+|---|---|
+| dq_per_joint_max | [0.98, 0.71, 0.71, 0.71, 1.03, 0.85] rad/s |
+| ddq_per_joint_max | [7.16, 5.00, 5.00, 5.00, 7.29, 6.54] rad/s² |
+
+### 分析
+
+1. **harmonics=5 が明確に優越**: 条件数 5.44 vs 6.87（21% 改善）、collision margin 2.5cm vs 0.7cm
+2. **計算時間は同等**: h5 の方がむしろ速い（47min vs 49min）。決定変数は多いが SLSQP が早く収束
+3. **h3 は patience stop**: restart 11 で打ち切り。h5 は 20 restart 完走しより良い解を探索
+4. **dq_max の利用率は約 50%**: バウンド 2.0 rad/s に対し実測 ~1.0 rad/s。衝突・ワークスペース制約が支配的
+
+### ワークスペース下端の修正
+
+ワークスペース下端が地面から 3cm であり、collision safety_margin=5cm と不整合であることを発見。
+下端を **7cm** に修正（`ur5e_with_box.xml`: center_z=0.479, half_z=0.409）。
+
+### 結論
+
+- harmonics=5, dq_max=2.0, duration=5.0s を推奨設定として採用
+- 現時点のベスト: **κ=5.44** (feasible, Kubus et al. の κ=7-8 を上回る)
