@@ -27,7 +27,7 @@ services:
         HOST_GID: ${HOST_GID:-1000}
         HOST_USER: ${USER:-developer}
     image: mjwarp-ur5e:latest
-
+      
     environment:
       HOST_USER: ${USER:-developer}
       DISPLAY: ${DISPLAY:-:0}
@@ -53,6 +53,9 @@ services:
       - mujoco-cache:/home/${USER:-developer}/.cache/mujoco
       - warp-cache:/home/${USER:-developer}/.cache/warp
 
+      # Share Cluade Code setups
+      - ${HOME}/.claude:/home/${USER:-developer}/.claude:ro
+        
     # Shared memory for PyTorch DataLoader workers, NCCL, etc.
     ipc: host
     shm_size: ${SHM_SIZE:-8gb}
