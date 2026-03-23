@@ -111,10 +111,12 @@ class _RestartResult:
     fun: float
     condition_number: float
     n_func_evals: int
+    n_iters: int
     wall_time: float
     constraint_margin: float
     feasible: bool
     named_margins: dict[str, float]
+    iter_logs: list[dict[str, float]]
 
 
 def _config_to_wandb_dict(cfg: OptimizerConfig) -> dict:
@@ -224,9 +226,15 @@ def _run_single_restart(
     use_d_optimal = config.objective_type == "d_optimal"
     column_scale = config.ft_offset_column_scale and config.include_ft_offset
 
+    # Track per-iteration metrics locally for batch logging
+    iter_logs: list[dict[str, float]] = []
+    _latest_obj: list[float] = [float("inf")]
+    _latest_cond: list[float] = [float("inf")]
+    iter_count = [0]
+
     def objective(x: np.ndarray) -> float:
         if use_d_optimal:
-            obj_val, _ = d_optimal_with_cond(
+            obj_val, cond_val = d_optimal_with_cond(
                 x,
                 cache,
                 model,
@@ -247,9 +255,25 @@ def _run_single_restart(
                 include_ft_offset=config.include_ft_offset,
                 column_scale=column_scale,
             )
+            cond_val = obj_val
+        _latest_obj[0] = obj_val
+        _latest_cond[0] = cond_val
         return obj_val
 
     t0 = time.perf_counter()
+
+    def _callback(xk: np.ndarray) -> None:
+        iter_count[0] += 1
+        iter_logs.append(
+            {
+                "iter/condition_number": _latest_cond[0],
+                "iter/objective": _latest_obj[0],
+                "iter/restart_index": restart_index,
+                "iter/iter_in_restart": iter_count[0],
+                "iter/wall_time": time.perf_counter() - t0,
+            }
+        )
+
     result = minimize(
         objective,
         x0,
@@ -257,6 +281,7 @@ def _run_single_restart(
         bounds=fourier_bounds,
         constraints=constraints,
         options={"maxiter": config.max_iter_per_start, "ftol": config.ftol},
+        callback=_callback,
     )
     wall_time = time.perf_counter() - t0
 
@@ -287,10 +312,12 @@ def _run_single_restart(
         fun=float(result.fun),
         condition_number=cond,
         n_func_evals=result.nfev,
+        n_iters=iter_count[0],
         wall_time=wall_time,
         constraint_margin=margin,
         feasible=margin >= 0,
         named_margins=named_margins,
+        iter_logs=iter_logs,
     )
 
 
@@ -662,8 +689,13 @@ class ExcitationOptimizer:
                     best_x = rr.x.copy()
                     best_idx = rr.restart_index
 
-                # Log restart-level metrics
+                # Log per-iteration metrics (batch)
                 if wb_run is not None:
+                    for iter_log in rr.iter_logs:
+                        global_step += 1
+                        wb_run.log(iter_log, step=global_step)
+
+                    # Log restart-level metrics
                     global_step += 1
                     restart_log: dict = {
                         "restart/condition_number": rr.condition_number,
@@ -672,6 +704,7 @@ class ExcitationOptimizer:
                         "restart/constraint_margin_min": rr.constraint_margin,
                         "restart/feasible": int(rr.feasible),
                         "restart/n_func_evals": rr.n_func_evals,
+                        "restart/n_iters": rr.n_iters,
                         "restart/wall_time_s": rr.wall_time,
                         "restart/improved": int(improved),
                         "restart/index": rr.restart_index,
