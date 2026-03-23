@@ -175,3 +175,94 @@ def test_set_model_state_validates_shapes() -> None:
             loaded.data,
             np.zeros(loaded.model.nq + 1),
         )
+
+
+# --- FT sensor offset augmentation tests ---
+
+
+def test_stacked_regressor_with_ft_offset_shape() -> None:
+    loaded = _load_payload_scene()
+    sample = _trajectory(scale=0.2)
+    regressor = compute_stacked_body_regressor(
+        loaded.model,
+        loaded.data,
+        sample.position,
+        sample.velocity,
+        sample.acceleration,
+        PAYLOAD_BODY_NAME,
+        subsample_factor=10,
+        include_ft_offset=True,
+    )
+    n_samples = regressor.shape[0] // 6
+    assert regressor.shape == (n_samples * 6, 16)
+
+
+def test_stacked_regressor_ft_offset_identity_block() -> None:
+    loaded = _load_payload_scene()
+    sample = _trajectory(scale=0.2)
+    regressor = compute_stacked_body_regressor(
+        loaded.model,
+        loaded.data,
+        sample.position,
+        sample.velocity,
+        sample.acceleration,
+        PAYLOAD_BODY_NAME,
+        subsample_factor=10,
+        include_ft_offset=True,
+    )
+    n_samples = regressor.shape[0] // 6
+    expected_identity = np.tile(np.eye(6, dtype=np.float64), (n_samples, 1))
+    np.testing.assert_array_equal(regressor[:, :6], expected_identity)
+
+
+def test_stacked_regressor_ft_offset_preserves_physics() -> None:
+    loaded = _load_payload_scene()
+    sample = _trajectory(scale=0.2)
+    kwargs = dict(
+        model=loaded.model,
+        data=loaded.data,
+        q=sample.position,
+        dq=sample.velocity,
+        ddq=sample.acceleration,
+        body_name=PAYLOAD_BODY_NAME,
+        subsample_factor=10,
+    )
+    regressor_base = compute_stacked_body_regressor(**kwargs, include_ft_offset=False)
+    regressor_ext = compute_stacked_body_regressor(**kwargs, include_ft_offset=True)
+    np.testing.assert_array_equal(regressor_ext[:, 6:], regressor_base)
+
+
+def test_condition_number_column_scale() -> None:
+    loaded = _load_payload_scene()
+    sample = _trajectory(scale=0.2)
+    regressor = compute_stacked_body_regressor(
+        loaded.model,
+        loaded.data,
+        sample.position,
+        sample.velocity,
+        sample.acceleration,
+        PAYLOAD_BODY_NAME,
+        subsample_factor=10,
+        include_ft_offset=True,
+    )
+    cond_raw = compute_condition_number(regressor, column_scale=False)
+    cond_scaled = compute_condition_number(regressor, column_scale=True)
+    assert np.isfinite(cond_scaled)
+    assert np.isfinite(cond_raw)
+    # Column scaling should reduce the condition number for offset-augmented regressor
+    assert cond_scaled <= cond_raw
+
+
+def test_ft_offset_default_backward_compatible() -> None:
+    loaded = _load_payload_scene()
+    sample = _trajectory(scale=0.2)
+    regressor = compute_stacked_body_regressor(
+        loaded.model,
+        loaded.data,
+        sample.position,
+        sample.velocity,
+        sample.acceleration,
+        PAYLOAD_BODY_NAME,
+        subsample_factor=10,
+    )
+    assert regressor.shape[1] == 10

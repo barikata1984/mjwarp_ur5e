@@ -78,10 +78,12 @@ class OptimizeExcitationConfig(ModelConfig):
     max_displacement: float = 0.5
     enable_collision: bool = True
     enable_payload_workspace: bool = True
-    ee_max_linear_velocity: float = 0.25  # m/s, 0 to disable
-    dq_max: float = 0.0873  # rad/s (~5 deg/s), uniform limit for all joints (0 to use defaults)
-    enable_acc_constraint: bool = True  # Enable joint acceleration constraint
+    ee_max_linear_velocity: float = 0.0  # m/s, 0 to disable
+    dq_max: float = 1.5  # rad/s, uniform limit for all joints (0 to use defaults)
+    enable_acc_constraint: bool = False  # Enable joint acceleration constraint
     use_fourier_bounds: bool = False  # Use analytical Fourier coefficient bounds for velocity
+    include_ft_offset: bool = False  # Augment regressor with FT sensor offset columns (16 params)
+    ft_offset_column_scale: bool = True  # Column-scale the augmented regressor before SVD
     objective: str = "d_optimal"  # "d_optimal" or "condition_number"
     output: str = "results/excitation_result.json"
     trajectory_output: str = "results/excitation_trajectory.json"

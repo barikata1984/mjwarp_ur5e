@@ -109,7 +109,6 @@ def make_box_workspace_constraint(
 
 def _box_vertices(half_extents: np.ndarray, offset: np.ndarray) -> np.ndarray:
     """Return 8 vertices of an axis-aligned box in local frame (8, 3)."""
-    hx, hy, hz = half_extents
     signs = np.array(
         [
             [-1, -1, -1],
@@ -126,13 +125,26 @@ def _box_vertices(half_extents: np.ndarray, offset: np.ndarray) -> np.ndarray:
     return signs * half_extents + offset
 
 
-def _evaluate_payload_vertices(
+def _box_surface_points(half_extents: np.ndarray, offset: np.ndarray) -> np.ndarray:
+    """Return 26 surface sample points of a box: 8 vertices + 12 edge midpoints + 6 face centers."""
+    coords = np.array([-1.0, 0.0, 1.0])
+    grid = np.array(np.meshgrid(coords, coords, coords)).T.reshape(-1, 3)
+    # Remove the interior point (0, 0, 0)
+    mask = np.any(grid != 0.0, axis=1)
+    surface = grid[mask]  # (26, 3)
+    return surface * half_extents + offset
+
+
+def _evaluate_payload_surface_points(
     model: mujoco.MjModel,
     data: mujoco.MjData,
     q_trajectory: np.ndarray,
     body_name: str,
 ) -> np.ndarray:
-    """Return payload geom vertex positions (n_steps, 8, 3) in world frame."""
+    """Return payload geom surface sample positions (n_steps, 26, 3) in world frame.
+
+    Samples 26 points on the box surface: 8 vertices, 12 edge midpoints, 6 face centers.
+    """
     body_id = get_named_object_id(model, mujoco.mjtObj.mjOBJ_BODY, body_name)
     if body_id is None:
         raise ValueError(f"Unknown body: {body_name}")
@@ -149,19 +161,20 @@ def _evaluate_payload_vertices(
 
     half_extents = model.geom_size[geom_id].copy()
     geom_offset = model.geom_pos[geom_id].copy()
-    local_verts = _box_vertices(half_extents, geom_offset)  # (8, 3)
+    local_points = _box_surface_points(half_extents, geom_offset)  # (26, 3)
+    n_points = local_points.shape[0]
 
     n_steps = q_trajectory.shape[0]
-    world_verts = np.zeros((n_steps, 8, 3), dtype=np.float64)
+    world_points = np.zeros((n_steps, n_points, 3), dtype=np.float64)
 
     for i in range(n_steps):
         data.qpos[:] = q_trajectory[i]
         mujoco.mj_kinematics(model, data)
         body_pos = data.xpos[body_id]
         body_rot = data.xmat[body_id].reshape(3, 3)
-        world_verts[i] = (body_rot @ local_verts.T).T + body_pos
+        world_points[i] = (body_rot @ local_points.T).T + body_pos
 
-    return world_verts
+    return world_points
 
 
 def _compute_box_margin(
@@ -188,7 +201,7 @@ def make_payload_workspace_constraint(
     data: mujoco.MjData,
     body_name: str = "payload_box_mount",
 ) -> Callable[[np.ndarray], float]:
-    """Return f(x)->float >= 0 iff all payload geom vertices stay within box bounds."""
+    """Return f(x)->float >= 0 iff all payload surface sample points stay within box bounds."""
     lower = (
         np.asarray(workspace_config.box_lower, dtype=np.float64)
         if workspace_config.box_lower is not None
@@ -203,8 +216,8 @@ def make_payload_workspace_constraint(
 
     def constraint(x: np.ndarray) -> float:
         sample = cache.get(x)
-        verts = _evaluate_payload_vertices(model, data, sample.position, body_name)
-        pts = verts.reshape(-1, 3)
+        surface_pts = _evaluate_payload_surface_points(model, data, sample.position, body_name)
+        pts = surface_pts.reshape(-1, 3)
         return _compute_box_margin(pts, lower, upper, margin)
 
     return constraint

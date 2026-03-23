@@ -54,6 +54,8 @@ class OptimizerConfig:
     enable_velocity_constraint: bool = True
     enable_acceleration_constraint: bool = True
     use_fourier_bounds: bool = False
+    include_ft_offset: bool = False
+    ft_offset_column_scale: bool = True
 
     def __post_init__(self) -> None:
         if self.q0 is None:
@@ -133,6 +135,8 @@ def _config_to_wandb_dict(cfg: OptimizerConfig) -> dict:
     d["use_fourier_bounds"] = cfg.use_fourier_bounds
     d["enable_velocity_constraint"] = cfg.enable_velocity_constraint
     d["enable_acceleration_constraint"] = cfg.enable_acceleration_constraint
+    d["include_ft_offset"] = cfg.include_ft_offset
+    d["ft_offset_column_scale"] = cfg.ft_offset_column_scale
     if cfg.ee_velocity_config is not None:
         d["ee_max_linear_velocity"] = cfg.ee_velocity_config.max_linear_velocity
     return d
@@ -276,14 +280,30 @@ class ExcitationOptimizer:
 
         use_d_optimal = cfg.objective_type == "d_optimal"
 
+        _column_scale = cfg.ft_offset_column_scale and cfg.include_ft_offset
+
         def objective(x: np.ndarray) -> float:
             if use_d_optimal:
                 obj_val, cond_val = d_optimal_with_cond(
-                    x, cache, self.model, self.data, cfg.body_name, cfg.subsample_factor
+                    x,
+                    cache,
+                    self.model,
+                    self.data,
+                    cfg.body_name,
+                    cfg.subsample_factor,
+                    include_ft_offset=cfg.include_ft_offset,
+                    column_scale=_column_scale,
                 )
             else:
                 cond_val = condition_number_objective(
-                    x, cache, self.model, self.data, cfg.body_name, cfg.subsample_factor
+                    x,
+                    cache,
+                    self.model,
+                    self.data,
+                    cfg.body_name,
+                    cfg.subsample_factor,
+                    include_ft_offset=cfg.include_ft_offset,
+                    column_scale=_column_scale,
                 )
                 obj_val = cond_val
             _latest_obj[0] = obj_val
@@ -339,7 +359,14 @@ class ExcitationOptimizer:
             # Evaluate condition number for reporting (reuse cached trajectory)
             if use_d_optimal:
                 _, cond = d_optimal_with_cond(
-                    result.x, cache, self.model, self.data, cfg.body_name, cfg.subsample_factor
+                    result.x,
+                    cache,
+                    self.model,
+                    self.data,
+                    cfg.body_name,
+                    cfg.subsample_factor,
+                    include_ft_offset=cfg.include_ft_offset,
+                    column_scale=_column_scale,
                 )
             else:
                 cond = float(result.fun)
@@ -475,6 +502,8 @@ class ExcitationOptimizer:
             cfg.duration,
             cfg.fps,
             q0,
+            include_ft_offset=cfg.include_ft_offset,
+            column_scale=cfg.ft_offset_column_scale and cfg.include_ft_offset,
         )
 
         _, full_constraints = self._build_cache_and_constraints()

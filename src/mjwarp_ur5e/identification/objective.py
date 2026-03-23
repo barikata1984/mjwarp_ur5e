@@ -14,6 +14,7 @@ def _compute_stacked_regressor(
     data: mujoco.MjData,
     body_name: str,
     subsample_factor: int,
+    include_ft_offset: bool = False,
 ) -> np.ndarray:
     """Build stacked regressor from coefficient vector (shared by objectives)."""
     sample = cache.get(x)
@@ -25,7 +26,17 @@ def _compute_stacked_regressor(
         sample.acceleration,
         body_name,
         subsample_factor=subsample_factor,
+        include_ft_offset=include_ft_offset,
     )
+
+
+def _maybe_column_scale(matrix: np.ndarray, column_scale: bool) -> np.ndarray:
+    """Apply column L2-norm scaling if requested."""
+    if not column_scale:
+        return matrix
+    norms = np.linalg.norm(matrix, axis=0)
+    norms = np.maximum(norms, 1e-30)
+    return matrix / norms
 
 
 def condition_number_objective(
@@ -35,6 +46,8 @@ def condition_number_objective(
     data: mujoco.MjData,
     body_name: str,
     subsample_factor: int,
+    include_ft_offset: bool = False,
+    column_scale: bool = False,
 ) -> float:
     """Compute condition number of the stacked body regressor.
 
@@ -42,8 +55,10 @@ def condition_number_objective(
     crashing the optimizer.
     """
     try:
-        stacked = _compute_stacked_regressor(x, cache, model, data, body_name, subsample_factor)
-        return compute_condition_number(stacked)
+        stacked = _compute_stacked_regressor(
+            x, cache, model, data, body_name, subsample_factor, include_ft_offset
+        )
+        return compute_condition_number(stacked, column_scale=column_scale)
     except (np.linalg.LinAlgError, ValueError):
         return 1e12
 
@@ -55,19 +70,23 @@ def d_optimal_objective(
     data: mujoco.MjData,
     body_name: str,
     subsample_factor: int,
+    include_ft_offset: bool = False,
+    column_scale: bool = False,
 ) -> float:
     """D-optimal objective: -log det(W^T W) = -2 * sum(log(sigma_i)).
 
-    Smooth (C^∞) alternative to condition number minimization.
+    Smooth (C^inf) alternative to condition number minimization.
     Maximizes the volume of the information ellipsoid, encouraging all
     singular values to be large rather than just minimizing their ratio.
 
     Returns a large finite value (1e12) on numerical failure.
     """
     try:
-        stacked = _compute_stacked_regressor(x, cache, model, data, body_name, subsample_factor)
+        stacked = _compute_stacked_regressor(
+            x, cache, model, data, body_name, subsample_factor, include_ft_offset
+        )
+        stacked = _maybe_column_scale(stacked, column_scale)
         sv = np.linalg.svd(stacked, compute_uv=False)
-        # Floor tiny singular values to avoid log(0)
         sv_floored = np.maximum(sv, 1e-30)
         return -2.0 * np.sum(np.log(sv_floored))
     except (np.linalg.LinAlgError, ValueError):
@@ -81,6 +100,8 @@ def d_optimal_with_cond(
     data: mujoco.MjData,
     body_name: str,
     subsample_factor: int,
+    include_ft_offset: bool = False,
+    column_scale: bool = False,
 ) -> tuple[float, float]:
     """Compute D-optimal objective and condition number from a single SVD.
 
@@ -88,7 +109,10 @@ def d_optimal_with_cond(
     the stacked regressor twice when both values are needed.
     """
     try:
-        stacked = _compute_stacked_regressor(x, cache, model, data, body_name, subsample_factor)
+        stacked = _compute_stacked_regressor(
+            x, cache, model, data, body_name, subsample_factor, include_ft_offset
+        )
+        stacked = _maybe_column_scale(stacked, column_scale)
         sv = np.linalg.svd(stacked, compute_uv=False)
         sv_floored = np.maximum(sv, 1e-30)
         d_opt = -2.0 * np.sum(np.log(sv_floored))
@@ -112,6 +136,8 @@ def evaluate_full_resolution(
     duration: float,
     fps: float,
     q0: np.ndarray,
+    include_ft_offset: bool = False,
+    column_scale: bool = False,
 ) -> tuple[float, np.ndarray]:
     """Evaluate objective at full resolution (no subsampling).
 
@@ -128,6 +154,7 @@ def evaluate_full_resolution(
         sample.acceleration,
         body_name,
         subsample_factor=1,
+        include_ft_offset=include_ft_offset,
     )
-    cond = compute_condition_number(stacked)
+    cond = compute_condition_number(stacked, column_scale=column_scale)
     return cond, stacked

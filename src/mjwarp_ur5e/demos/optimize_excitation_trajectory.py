@@ -92,6 +92,8 @@ def main() -> None:
         enable_velocity_constraint=enable_vel_constraint,
         enable_acceleration_constraint=config.enable_acc_constraint,
         use_fourier_bounds=config.use_fourier_bounds,
+        include_ft_offset=config.include_ft_offset,
+        ft_offset_column_scale=config.ft_offset_column_scale,
     )
 
     optimizer = ExcitationOptimizer(config=opt_config, model=loaded.model, data=loaded.data)
@@ -122,6 +124,9 @@ def main() -> None:
         print(
             "  Fourier coefficient bounds: ENABLED (velocity constraint via box bounds)", flush=True
         )
+    if config.include_ft_offset:
+        scale_str = "column-scaled" if config.ft_offset_column_scale else "unscaled"
+        print(f"  FT sensor offset estimation: ENABLED (16 params, {scale_str})", flush=True)
     if not config.enable_acc_constraint:
         print("  acceleration constraint: DISABLED", flush=True)
     if config.early_stop:
@@ -142,10 +147,15 @@ def main() -> None:
     print(f"  Total evaluations: {result.n_evaluations}")
     print(f"  Best start index: {result.best_start_index}")
     if result.constraint_margins:
+        violated = {k: v for k, v in result.constraint_margins.items() if v < 0}
+        satisfied = {k: v for k, v in result.constraint_margins.items() if v >= 0}
         print("  Constraint margins:")
-        for name, margin in result.constraint_margins.items():
-            status = "OK" if margin >= 0 else "VIOLATED"
-            print(f"    {name}: {margin:.6f}  [{status}]")
+        for name, margin in satisfied.items():
+            print(f"    {name}: {margin:.6f}  [OK]")
+        if violated:
+            print(f"  VIOLATED constraints ({len(violated)}/{len(result.constraint_margins)}):")
+            for name, margin in violated.items():
+                print(f"    {name}: {margin:.6f}  (violation = {-margin:.6f})")
     if result.trajectory_stats:
         print("  Trajectory stats:")
         for key, val in result.trajectory_stats.items():

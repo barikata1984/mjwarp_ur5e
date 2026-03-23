@@ -24,11 +24,11 @@ optimizer:
 joint_limits:
   q_min: [-6.2832, -6.2832, -6.2832, -6.2832, -6.2832, -6.2832]
   q_max: [6.2832, 6.2832, 6.2832, 6.2832, 6.2832, 6.2832]
-  dq_max: [0.0873, 0.0873, 0.0873, 0.0873, 0.0873, 0.0873]  # ~5 deg/s
-  ddq_max: [8.0, 8.0, 8.0, 8.0, 8.0, 8.0]
+  dq_max: [1.5, 1.5, 1.5, 1.5, 1.5, 1.5]  # rad/s
+  ddq_max: [8.0, 8.0, 8.0, 8.0, 8.0, 8.0]  # not enforced by default
 
 ee_velocity:
-  max_linear_velocity: 0.25
+  max_linear_velocity: 0.0  # disabled by default
 
 workspace:
   max_displacement: 0.5

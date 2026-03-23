@@ -146,6 +146,7 @@ def compute_stacked_body_regressor(
     ddq: np.ndarray,
     body_name: str,
     subsample_factor: int = 1,
+    include_ft_offset: bool = False,
 ) -> np.ndarray:
     q_array = np.asarray(q, dtype=np.float64)
     dq_array = np.asarray(dq, dtype=np.float64)
@@ -163,11 +164,27 @@ def compute_stacked_body_regressor(
         set_model_state(model, data, q_array[index], dq_array[index], ddq_array[index])
         rows.append(sample_body_regressor(model, data, body_name).regressor)
 
-    return np.vstack(rows)
+    stacked = np.vstack(rows)
+
+    if include_ft_offset:
+        n_samples = len(rows)
+        identity_block = np.tile(np.eye(6, dtype=np.float64), (n_samples, 1))
+        stacked = np.hstack([identity_block, stacked])
+
+    return stacked
 
 
-def compute_condition_number(regressor: np.ndarray, singular_value_floor: float = 1e-12) -> float:
-    singular_values = np.linalg.svd(np.asarray(regressor, dtype=np.float64), compute_uv=False)
+def compute_condition_number(
+    regressor: np.ndarray,
+    singular_value_floor: float = 1e-12,
+    column_scale: bool = False,
+) -> float:
+    matrix = np.asarray(regressor, dtype=np.float64)
+    if column_scale:
+        norms = np.linalg.norm(matrix, axis=0)
+        norms = np.maximum(norms, 1e-30)
+        matrix = matrix / norms
+    singular_values = np.linalg.svd(matrix, compute_uv=False)
     if singular_values[-1] < singular_value_floor:
         return float("inf")
     return float(singular_values[0] / singular_values[-1])
