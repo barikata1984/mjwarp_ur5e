@@ -9,7 +9,7 @@ model:
 trajectory:
   num_joints: 6
   num_harmonics: 5
-  base_freq: 0.1
+  base_freq: 0.2
   duration: 5.0
   fps: 100.0
 

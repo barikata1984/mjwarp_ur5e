@@ -6,9 +6,9 @@ from mjwarp_ur5e.cli.configs import OptimizeExcitationConfig, ValidateExcitation
 def test_optimize_excitation_config_defaults() -> None:
     cfg = OptimizeExcitationConfig()
     assert cfg.model == "assets/ur5e/mjcf/scene_with_box.xml"
-    assert cfg.num_harmonics == 3
-    assert abs(cfg.base_freq - 1.0 / 3.0) < 1e-10
-    assert cfg.duration == 3.0
+    assert cfg.num_harmonics == 5
+    assert cfg.base_freq == 0.2
+    assert cfg.duration == 5.0
     assert cfg.fps == 100.0
     assert cfg.subsample_factor == 5
     assert cfg.n_monte_carlo == 20

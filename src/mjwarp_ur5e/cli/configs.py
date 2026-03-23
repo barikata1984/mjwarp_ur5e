@@ -67,9 +67,9 @@ class RenderConfig:
 class OptimizeExcitationConfig(ModelConfig):
     """Config for excitation trajectory optimization CLI."""
 
-    num_harmonics: int = 3
-    base_freq: float = 1.0 / 3.0
-    duration: float = 3.0
+    num_harmonics: int = 5
+    base_freq: float = 0.2
+    duration: float = 5.0
     fps: float = 100.0
     subsample_factor: int = 5
     n_monte_carlo: int = 20
