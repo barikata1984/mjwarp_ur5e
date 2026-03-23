@@ -1,5 +1,13 @@
 # 参考文献マスタ
 
+### Kubus2007_ft_offset
+
+**On-line Rigid Object Recognition and Pose Estimation Based on Inertial Parameters**
+Kubus, D., Kroeger, T., Wahl, F. M. — IEEE/RSJ IROS, 2007
+DOI: `10.1109/IROS.2007.4399184` | [URL](https://ieeexplore.ieee.org/document/4399184/)
+
+> FT センサのオフセット直接推定方式を提案。回帰行列を `[I₆ | V]` に拡張してオフセット 6 パラメータを慣性 10 パラメータと同時推定する手法を定式化。本プロジェクトの FT オフセット対応励起軌道最適化の基礎文献。
+
 ### Kubus2008_rtls
 
 **On-Line Estimation of Inertial Parameters Using a Recursive Total Least-Squares Approach**

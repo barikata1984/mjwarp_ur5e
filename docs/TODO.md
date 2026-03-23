@@ -28,6 +28,19 @@
 - [x] 診断ラン実施 (constrained / unconstrained 並列比較)
 - [x] 目的関数を D-optimal 基準に変更 (`-log det(W^T W)`, 条件数はバリデーション指標に)
 - [x] **解析的 Fourier 係数バウンドの導入** (三角不等式で vel/acc 違反を構造的に排除)
+## FT センサオフセット推定対応
+
+- [x] 回帰行列の `[I₆ | V]` 拡張 (`include_ft_offset`)
+- [x] 列スケーリングオプション (`ft_offset_column_scale`)
+- [x] CLI フラグ (`--include-ft-offset`, `--no-ft-offset-column-scale`)
+- [x] 制約デフォルト変更 (dq_max=1.5, 加速度制約OFF, EE速度制約OFF)
+- [x] ペイロードワークスペース制約を 26 サーフェスポイントに変更
+- [x] 制約違反の定量的ログ出力
+- [ ] 列スケーリングの妥当性検証（スケールあり/なしの推定精度比較）
+- [ ] feasible 解が得られる制約設定の探索（特に 10s 条件）
+
+## 最適化品質の改善 — feasible 解の獲得 (→ `docs/ISSUES.md`)
+
 - [ ] 制約の段階的評価（安い制約で早期棄却し FK ループをスキップ）
 - [ ] collision constraint の高速化 (FK ループ共有化)
 - [ ] 最適化アルゴリズムの変更 (SLSQP → COBYLA or IPOPT) ← バウンド導入後に再評価
