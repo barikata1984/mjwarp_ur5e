@@ -4,9 +4,8 @@ from pathlib import Path
 
 import mujoco
 import numpy as np
-import tyro
 
-from mjwarp_ur5e.cli import OptimizeExcitationConfig
+from mjwarp_ur5e.cli import OptimizeExcitationConfig, load_config
 from mjwarp_ur5e.identification.collision import CollisionConfig
 from mjwarp_ur5e.identification.io import (
     result_to_trajectory,
@@ -24,7 +23,7 @@ from mjwarp_ur5e.model import get_named_object_id, load_and_reset
 
 
 def main() -> None:
-    config = tyro.cli(OptimizeExcitationConfig)
+    config = load_config(OptimizeExcitationConfig)
 
     loaded = load_and_reset(config.model or None)
     q0 = np.array(loaded.data.qpos[: loaded.model.nq], dtype=np.float64)
@@ -94,6 +93,8 @@ def main() -> None:
         use_fourier_bounds=config.use_fourier_bounds,
         include_ft_offset=config.include_ft_offset,
         ft_offset_column_scale=config.ft_offset_column_scale,
+        n_workers=config.n_workers,
+        model_path=str(loaded.model_path) if config.n_workers > 1 else None,
     )
 
     optimizer = ExcitationOptimizer(config=opt_config, model=loaded.model, data=loaded.data)
@@ -114,6 +115,8 @@ def main() -> None:
     print(f"  harmonics={config.num_harmonics}, duration={config.duration}s", flush=True)
     print(f"  monte-carlo restarts={config.n_monte_carlo}", flush=True)
     print(f"  max_iter_per_start={config.max_iter}", flush=True)
+    if config.n_workers > 1:
+        print(f"  parallel workers={config.n_workers}", flush=True)
     if config.wandb:
         print(f"  wandb: project={config.wandb_project}", flush=True)
     if config.ee_max_linear_velocity > 0:

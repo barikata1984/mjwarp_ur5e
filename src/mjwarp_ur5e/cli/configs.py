@@ -84,6 +84,7 @@ class OptimizeExcitationConfig(ModelConfig):
     use_fourier_bounds: bool = False  # Use analytical Fourier coefficient bounds for velocity
     include_ft_offset: bool = False  # Augment regressor with FT sensor offset columns (16 params)
     ft_offset_column_scale: bool = True  # Column-scale the augmented regressor before SVD
+    n_workers: int = 1  # Number of parallel worker processes (1 = sequential)
     objective: str = "d_optimal"  # "d_optimal" or "condition_number"
     output: str = "results/excitation_result.json"
     trajectory_output: str = "results/excitation_trajectory.json"

@@ -6,11 +6,9 @@ from dataclasses import dataclass, field
 
 import mujoco
 import numpy as np
-from scipy.optimize import minimize
+from scipy.optimize import Bounds, minimize
 
 from mjwarp_ur5e.identification.collision import CollisionConfig
-from scipy.optimize import Bounds
-
 from mjwarp_ur5e.identification.constraints import (
     JointLimits,
     _TrajectoryCache,
@@ -56,6 +54,8 @@ class OptimizerConfig:
     use_fourier_bounds: bool = False
     include_ft_offset: bool = False
     ft_offset_column_scale: bool = True
+    n_workers: int = 1  # Number of parallel worker processes (1 = sequential)
+    model_path: str | None = None  # XML path for worker processes to load model
 
     def __post_init__(self) -> None:
         if self.q0 is None:
@@ -102,6 +102,21 @@ class OptimizationResult:
     trajectory_stats: dict[str, float] = field(default_factory=dict)
 
 
+@dataclass
+class _RestartResult:
+    """Result from a single restart, returned by worker processes."""
+
+    restart_index: int
+    x: np.ndarray
+    fun: float
+    condition_number: float
+    n_func_evals: int
+    wall_time: float
+    constraint_margin: float
+    feasible: bool
+    named_margins: dict[str, float]
+
+
 def _config_to_wandb_dict(cfg: OptimizerConfig) -> dict:
     """Convert OptimizerConfig to a flat dict suitable for wandb.config."""
     d: dict = {
@@ -142,6 +157,143 @@ def _config_to_wandb_dict(cfg: OptimizerConfig) -> dict:
     return d
 
 
+def _build_cache_and_constraints_static(
+    cfg: OptimizerConfig,
+    model: mujoco.MjModel,
+    data: mujoco.MjData,
+) -> tuple[_TrajectoryCache, list[dict]]:
+    """Build trajectory cache and scipy constraints from config (no instance needed)."""
+    q0 = np.asarray(cfg.q0, dtype=np.float64)
+    cache = _TrajectoryCache(
+        num_joints=cfg.num_joints,
+        num_harmonics=cfg.num_harmonics,
+        base_freq=cfg.base_freq,
+        duration=cfg.duration,
+        fps=cfg.fps,
+        q0=q0,
+    )
+    constraints = build_scipy_constraints(
+        cache,
+        cfg.joint_limits,
+        workspace_config=cfg.workspace_config,
+        collision_config=cfg.collision_config,
+        model=model,
+        data=data,
+        payload_workspace_config=cfg.payload_workspace_config,
+        payload_body_name=cfg.body_name,
+        ee_velocity_config=cfg.ee_velocity_config,
+        site_name=cfg.site_name,
+        enable_velocity_constraint=cfg.enable_velocity_constraint,
+        enable_acceleration_constraint=cfg.enable_acceleration_constraint,
+    )
+    return cache, constraints
+
+
+def _compute_fourier_bounds_static(cfg: OptimizerConfig) -> Bounds | None:
+    """Compute scipy Bounds from analytical Fourier velocity bounds (no instance needed)."""
+    if not cfg.use_fourier_bounds or cfg.joint_limits is None:
+        return None
+    upper = compute_fourier_velocity_bounds(
+        num_joints=cfg.num_joints,
+        num_harmonics=cfg.num_harmonics,
+        base_freq=cfg.base_freq,
+        duration=cfg.duration,
+        dq_max=cfg.joint_limits.dq_max,
+    )
+    return Bounds(lb=-upper, ub=upper)
+
+
+def _run_single_restart(
+    model_path: str,
+    config: OptimizerConfig,
+    x0: np.ndarray,
+    restart_index: int,
+) -> _RestartResult:
+    """Run a single restart in a worker process.
+
+    Loads its own MjModel/MjData to ensure thread safety.
+    """
+    from mjwarp_ur5e.model import load_and_reset
+
+    loaded = load_and_reset(model_path)
+    model, data = loaded.model, loaded.data
+
+    cache, constraints = _build_cache_and_constraints_static(config, model, data)
+    fourier_bounds = _compute_fourier_bounds_static(config)
+
+    use_d_optimal = config.objective_type == "d_optimal"
+    column_scale = config.ft_offset_column_scale and config.include_ft_offset
+
+    def objective(x: np.ndarray) -> float:
+        if use_d_optimal:
+            obj_val, _ = d_optimal_with_cond(
+                x,
+                cache,
+                model,
+                data,
+                config.body_name,
+                config.subsample_factor,
+                include_ft_offset=config.include_ft_offset,
+                column_scale=column_scale,
+            )
+        else:
+            obj_val = condition_number_objective(
+                x,
+                cache,
+                model,
+                data,
+                config.body_name,
+                config.subsample_factor,
+                include_ft_offset=config.include_ft_offset,
+                column_scale=column_scale,
+            )
+        return obj_val
+
+    t0 = time.perf_counter()
+    result = minimize(
+        objective,
+        x0,
+        method=config.optimizer_method,
+        bounds=fourier_bounds,
+        constraints=constraints,
+        options={"maxiter": config.max_iter_per_start, "ftol": config.ftol},
+    )
+    wall_time = time.perf_counter() - t0
+
+    # Evaluate condition number for reporting
+    if use_d_optimal:
+        _, cond = d_optimal_with_cond(
+            result.x,
+            cache,
+            model,
+            data,
+            config.body_name,
+            config.subsample_factor,
+            include_ft_offset=config.include_ft_offset,
+            column_scale=column_scale,
+        )
+    else:
+        cond = float(result.fun)
+
+    margin = min(float(c["fun"](result.x)) for c in constraints)
+    named_margins = {
+        c.get("name", f"constraint_{i}"): float(c["fun"](result.x))
+        for i, c in enumerate(constraints)
+    }
+
+    return _RestartResult(
+        restart_index=restart_index,
+        x=result.x.copy(),
+        fun=float(result.fun),
+        condition_number=cond,
+        n_func_evals=result.nfev,
+        wall_time=wall_time,
+        constraint_margin=margin,
+        feasible=margin >= 0,
+        named_margins=named_margins,
+    )
+
+
 class ExcitationOptimizer:
     """Multi-start SLSQP optimizer for excitation trajectory design."""
 
@@ -174,45 +326,11 @@ class ExcitationOptimizer:
 
     def _build_cache_and_constraints(self) -> tuple[_TrajectoryCache, list[dict]]:
         """Build trajectory cache and all scipy constraints from config."""
-        cfg = self.config
-        q0 = np.asarray(cfg.q0, dtype=np.float64)
-        cache = _TrajectoryCache(
-            num_joints=cfg.num_joints,
-            num_harmonics=cfg.num_harmonics,
-            base_freq=cfg.base_freq,
-            duration=cfg.duration,
-            fps=cfg.fps,
-            q0=q0,
-        )
-        constraints = build_scipy_constraints(
-            cache,
-            cfg.joint_limits,
-            workspace_config=cfg.workspace_config,
-            collision_config=cfg.collision_config,
-            model=self.model,
-            data=self.data,
-            payload_workspace_config=cfg.payload_workspace_config,
-            payload_body_name=cfg.body_name,
-            ee_velocity_config=cfg.ee_velocity_config,
-            site_name=cfg.site_name,
-            enable_velocity_constraint=cfg.enable_velocity_constraint,
-            enable_acceleration_constraint=cfg.enable_acceleration_constraint,
-        )
-        return cache, constraints
+        return _build_cache_and_constraints_static(self.config, self.model, self.data)
 
     def _compute_fourier_bounds(self) -> Bounds | None:
         """Compute scipy Bounds from analytical Fourier velocity bounds."""
-        cfg = self.config
-        if not cfg.use_fourier_bounds or cfg.joint_limits is None:
-            return None
-        upper = compute_fourier_velocity_bounds(
-            num_joints=cfg.num_joints,
-            num_harmonics=cfg.num_harmonics,
-            base_freq=cfg.base_freq,
-            duration=cfg.duration,
-            dq_max=cfg.joint_limits.dq_max,
-        )
-        return Bounds(lb=-upper, ub=upper)
+        return _compute_fourier_bounds_static(self.config)
 
     def _compute_constraint_margin(self, x: np.ndarray, constraints: list[dict]) -> float:
         """Return the minimum constraint margin (>= 0 means all satisfied)."""
@@ -249,7 +367,26 @@ class ExcitationOptimizer:
                 the global best condition number stops improving.
         """
         cfg = self.config
-        q0 = np.asarray(cfg.q0, dtype=np.float64)
+        fourier_bounds = self._compute_fourier_bounds()
+
+        # Pre-generate ALL x0 vectors (deterministic regardless of n_workers)
+        rng = np.random.default_rng(cfg.seed)
+        all_x0 = [
+            self._generate_random_x0(rng, bounds=fourier_bounds) for _ in range(cfg.n_monte_carlo)
+        ]
+
+        if cfg.n_workers > 1:
+            return self._optimize_parallel(all_x0, wandb_config, early_stop_config)
+        return self._optimize_sequential(all_x0, wandb_config, early_stop_config)
+
+    def _optimize_sequential(
+        self,
+        all_x0: list[np.ndarray],
+        wandb_config: WandbConfig | None = None,
+        early_stop_config: EarlyStopConfig | None = None,
+    ) -> OptimizationResult:
+        """Sequential restart loop (original behavior)."""
+        cfg = self.config
         cache, constraints = self._build_cache_and_constraints()
         fourier_bounds = self._compute_fourier_bounds()
 
@@ -272,14 +409,10 @@ class ExcitationOptimizer:
         es = early_stop_config or EarlyStopConfig()
         patience_counter = 0
 
-        # Track the latest objective value and condition number.
-        # _latest_obj: raw objective value (D-optimal or cond number)
-        # _latest_cond: condition number (always tracked for reporting)
         _latest_obj: list[float] = [float("inf")]
         _latest_cond: list[float] = [float("inf")]
 
         use_d_optimal = cfg.objective_type == "d_optimal"
-
         _column_scale = cfg.ft_offset_column_scale and cfg.include_ft_offset
 
         def objective(x: np.ndarray) -> float:
@@ -310,7 +443,6 @@ class ExcitationOptimizer:
             _latest_cond[0] = cond_val
             return obj_val
 
-        rng = np.random.default_rng(cfg.seed)
         best_x: np.ndarray | None = None
         best_cond = float("inf")
         best_idx = 0
@@ -321,7 +453,7 @@ class ExcitationOptimizer:
 
         actual_restarts = 0
         for i in range(cfg.n_monte_carlo):
-            x0 = self._generate_random_x0(rng, bounds=fourier_bounds)
+            x0 = all_x0[i]
             iter_in_restart = [0]
             restart_t0 = time.perf_counter()
 
@@ -356,7 +488,6 @@ class ExcitationOptimizer:
             margin = self._compute_constraint_margin(result.x, constraints)
             feasible = margin >= 0
 
-            # Evaluate condition number for reporting (reuse cached trajectory)
             if use_d_optimal:
                 _, cond = d_optimal_with_cond(
                     result.x,
@@ -393,7 +524,6 @@ class ExcitationOptimizer:
                 best_x = result.x.copy()
                 best_idx = i
 
-            # Log restart-level metrics
             if wb_run is not None:
                 global_step += 1
                 restart_log: dict = {
@@ -413,9 +543,7 @@ class ExcitationOptimizer:
                     restart_log[f"restart/margin/{name}"] = mval
                 wb_run.log(restart_log, step=global_step)
 
-            # Early stopping check
             if es.enabled:
-                # Target condition number reached (current restart must be feasible)
                 if es.target_cond > 0 and feasible and cond <= es.target_cond:
                     print(
                         f"  Early stop: target cond {es.target_cond} reached "
@@ -423,7 +551,6 @@ class ExcitationOptimizer:
                         flush=True,
                     )
                     break
-                # Patience-based stopping
                 if improved and (best_cond < float("inf")):
                     patience_counter = 0
                 else:
@@ -437,12 +564,186 @@ class ExcitationOptimizer:
                     break
 
         wall_time = time.perf_counter() - t0
+        return self._build_final_result(
+            best_x=best_x,
+            best_cond=best_cond,
+            best_idx=best_idx,
+            total_evals=total_evals,
+            actual_restarts=actual_restarts,
+            wall_time=wall_time,
+            cache=cache,
+            constraints=constraints,
+            wb_run=wb_run,
+        )
+
+    def _optimize_parallel(
+        self,
+        all_x0: list[np.ndarray],
+        wandb_config: WandbConfig | None = None,
+        early_stop_config: EarlyStopConfig | None = None,
+    ) -> OptimizationResult:
+        """Parallel restart loop using ProcessPoolExecutor."""
+        from concurrent.futures import ProcessPoolExecutor, as_completed
+
+        cfg = self.config
+        if not cfg.model_path:
+            raise ValueError(
+                "OptimizerConfig.model_path is required for parallel mode (n_workers>1)"
+            )
+
+        # --- wandb setup ---
+        wb_run = None
+        if wandb_config and wandb_config.enabled:
+            try:
+                import wandb
+
+                wb_run = wandb.init(
+                    project=wandb_config.project,
+                    name=wandb_config.run_name,
+                    tags=wandb_config.tags or None,
+                    config={**_config_to_wandb_dict(cfg), "n_workers": cfg.n_workers},
+                )
+            except Exception:
+                log.warning("wandb init failed; continuing without logging", exc_info=True)
+
+        es = early_stop_config or EarlyStopConfig()
+        patience_counter = 0
+        use_d_optimal = cfg.objective_type == "d_optimal"
+
+        best_x: np.ndarray | None = None
+        best_cond = float("inf")
+        best_idx = 0
+        total_evals = 0
+        actual_restarts = 0
+        global_step = 0
+
+        t0 = time.perf_counter()
+
+        print(f"  Parallel mode: {cfg.n_workers} workers", flush=True)
+
+        # Submit one future per restart for fine-grained early stopping
+        futures = {}
+        with ProcessPoolExecutor(max_workers=cfg.n_workers) as executor:
+            for i in range(cfg.n_monte_carlo):
+                future = executor.submit(
+                    _run_single_restart,
+                    cfg.model_path,
+                    cfg,
+                    all_x0[i],
+                    i,
+                )
+                futures[future] = i
+
+            stopped_early = False
+            for future in as_completed(futures):
+                rr = future.result()
+                actual_restarts += 1
+                total_evals += rr.n_func_evals
+
+                if use_d_optimal:
+                    print(
+                        f"  start {rr.restart_index + 1}/{cfg.n_monte_carlo}: "
+                        f"cond={rr.condition_number:.4f}  D-opt={rr.fun:.4f}  "
+                        f"margin={rr.constraint_margin:.4f}  "
+                        f"feasible={rr.feasible}  ({rr.wall_time:.1f}s)",
+                        flush=True,
+                    )
+                else:
+                    print(
+                        f"  start {rr.restart_index + 1}/{cfg.n_monte_carlo}: "
+                        f"cond={rr.condition_number:.4f}  margin={rr.constraint_margin:.4f}  "
+                        f"feasible={rr.feasible}  ({rr.wall_time:.1f}s)",
+                        flush=True,
+                    )
+
+                improved = rr.condition_number < best_cond
+                if improved:
+                    best_cond = rr.condition_number
+                    best_x = rr.x.copy()
+                    best_idx = rr.restart_index
+
+                # Log restart-level metrics
+                if wb_run is not None:
+                    global_step += 1
+                    restart_log: dict = {
+                        "restart/condition_number": rr.condition_number,
+                        "restart/objective": rr.fun,
+                        "restart/global_best_cond": best_cond,
+                        "restart/constraint_margin_min": rr.constraint_margin,
+                        "restart/feasible": int(rr.feasible),
+                        "restart/n_func_evals": rr.n_func_evals,
+                        "restart/wall_time_s": rr.wall_time,
+                        "restart/improved": int(improved),
+                        "restart/index": rr.restart_index,
+                    }
+                    for name, mval in rr.named_margins.items():
+                        restart_log[f"restart/margin/{name}"] = mval
+                    wb_run.log(restart_log, step=global_step)
+
+                # Early stopping check
+                if es.enabled and not stopped_early:
+                    if es.target_cond > 0 and rr.feasible and rr.condition_number <= es.target_cond:
+                        print(
+                            f"  Early stop: target cond {es.target_cond} reached "
+                            f"(cond={rr.condition_number:.4f}, feasible=True)",
+                            flush=True,
+                        )
+                        stopped_early = True
+                    elif improved and (best_cond < float("inf")):
+                        patience_counter = 0
+                    else:
+                        patience_counter += 1
+
+                    if not stopped_early and patience_counter >= es.patience:
+                        print(
+                            f"  Early stop: no improvement for {es.patience} restarts "
+                            f"(best={best_cond:.4f})",
+                            flush=True,
+                        )
+                        stopped_early = True
+
+                    if stopped_early:
+                        # Cancel remaining futures (best-effort)
+                        for f in futures:
+                            f.cancel()
+
+        wall_time = time.perf_counter() - t0
+
+        # Build final result using local cache/constraints for diagnostics
+        cache, constraints = self._build_cache_and_constraints()
+        return self._build_final_result(
+            best_x=best_x,
+            best_cond=best_cond,
+            best_idx=best_idx,
+            total_evals=total_evals,
+            actual_restarts=actual_restarts,
+            wall_time=wall_time,
+            cache=cache,
+            constraints=constraints,
+            wb_run=wb_run,
+        )
+
+    def _build_final_result(
+        self,
+        *,
+        best_x: np.ndarray | None,
+        best_cond: float,
+        best_idx: int,
+        total_evals: int,
+        actual_restarts: int,
+        wall_time: float,
+        cache: _TrajectoryCache,
+        constraints: list[dict],
+        wb_run: object | None,
+    ) -> OptimizationResult:
+        """Build OptimizationResult and log final summary to wandb."""
+        cfg = self.config
+        q0 = np.asarray(cfg.q0, dtype=np.float64)
 
         n = cfg.num_joints * cfg.num_harmonics
         a_opt = best_x[:n].reshape(cfg.num_joints, cfg.num_harmonics)
         b_opt = best_x[n:].reshape(cfg.num_joints, cfg.num_harmonics)
 
-        # Compute diagnostics on best solution
         named_margins = self._compute_named_margins(best_x, constraints)
         best_feasible = all(v >= 0 for v in named_margins.values())
         traj_stats = self._compute_trajectory_stats(best_x, cache)
@@ -463,7 +764,6 @@ class ExcitationOptimizer:
             trajectory_stats=traj_stats,
         )
 
-        # Log final summary to wandb
         if wb_run is not None:
             summary: dict = {
                 "final/condition_number": best_cond,

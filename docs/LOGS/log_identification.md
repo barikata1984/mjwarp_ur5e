@@ -966,3 +966,50 @@ FT センサの観測に定数オフセット `[f_ox, f_oy, f_oz, τ_ox, τ_oy, 
 - **列スケーリングなし**: D-optimal 値が負 (オフセット列の √T 膨張で行列式が支配される) となり、最適化が制約違反方向に暴走。条件数 20-40 と 1 桁悪化
 - 列スケーリングは Kubus et al. (2007) の論文には含まれない独自導入。その妥当性は要検討
 - dq=1.5/5s の追加実験を実行中 (スケールあり/なし)
+
+---
+
+## 2026-03-23: 並列 Monte Carlo 最適化の実装
+
+### 概要
+
+2026-03-13 に設計した `ProcessPoolExecutor` ベースの並列 Monte Carlo 最適化を実装。
+
+### 実装内容
+
+| 項目 | 内容 |
+|---|---|
+| 並列化手法 | `concurrent.futures.ProcessPoolExecutor` |
+| Worker 関数 | `_run_single_restart()` (module-level, pickle 可能) |
+| MuJoCo 安全性 | 各 worker が `load_and_reset(model_path)` で独自 MjModel/MjData を生成 |
+| 結果収集 | `as_completed()` で完了順に収集 |
+| Early stopping | 到着順に判定、`future.cancel()` で残りを中止 (best-effort) |
+| RNG 再現性 | 全 x0 をメインプロセスで事前生成 → n_workers に依存しない |
+| wandb 対応 | 並列モードでは restart-level ログのみ (per-iteration は逐次のみ) |
+
+### CLI パラメータ
+
+```
+--n-workers INT  (default: 1, 1=逐次)
+```
+
+`n_workers=1` では従来と完全に同一の逐次実行パスを通るため後方互換性を維持。
+
+### ベンチマーク結果
+
+設定: harmonics=3, duration=3s, max_iter=10, n_monte_carlo=4, collision/payload OFF
+
+| モード | workers | wall time | speedup |
+|--------|---------|-----------|---------|
+| 逐次 | 1 | 51.5s | 1.0x |
+| 並列 | 4 | 13.9s | **3.7x** |
+
+ほぼ理想的な線形スケーリング。両モードで同一の最適解 (cond=12.5976, best_start_index=1) を確認。
+
+### 変更ファイル
+
+| ファイル | 変更内容 |
+|---|---|
+| `optimizer.py` | `_RestartResult`, `_run_single_restart()`, `_optimize_parallel()`, `_build_final_result()` 追加。`optimize()` を sequential/parallel に分岐 |
+| `configs.py` | `OptimizeExcitationConfig` に `n_workers` 追加 |
+| `optimize_excitation_trajectory.py` | `n_workers`, `model_path` の受け渡し |

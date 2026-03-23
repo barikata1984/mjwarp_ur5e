@@ -44,7 +44,7 @@
 - [ ] 制約の段階的評価（安い制約で早期棄却し FK ループをスキップ）
 - [ ] collision constraint の高速化 (FK ループ共有化)
 - [ ] 最適化アルゴリズムの変更 (SLSQP → COBYLA or IPOPT) ← バウンド導入後に再評価
-- [ ] 並列 Monte Carlo 最適化の実装 (`ProcessPoolExecutor`, 設計済み)
+- [x] 並列 Monte Carlo 最適化の実装 (`ProcessPoolExecutor`, 設計済み)
 - [ ] `EarlyStopConfig.min_improvement` の early stopping ロジックへの組み込み
 
 ## インフラ・共通
