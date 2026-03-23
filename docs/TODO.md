@@ -30,7 +30,7 @@
 - [x] **解析的 Fourier 係数バウンドの導入** (三角不等式で vel/acc 違反を構造的に排除)
 ## FT センサオフセット推定対応
 
-- [x] 回帰行列の `[I₆ | V]` 拡張 (`include_ft_offset`)
+- [x] 回帰行列の `[I₆ | V]` 拡張 (`with_ft_offset`)
 - [x] 列スケーリングオプション (`ft_offset_column_scale`)
 - [x] CLI フラグ (`--with-ft-offset`, `--no-ft-offset-column-scale`)
 - [x] 制約デフォルト変更 (dq_max=1.5, 加速度制約OFF, EE速度制約OFF)

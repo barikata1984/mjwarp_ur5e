@@ -1082,3 +1082,30 @@ n_monte_carlo=3, max_iter=100 で追加計測:
 | 10 | 2436s | 10.70 |
 
 sf=10 は間引きすぎで勾配精度が低下し、収束が遅れ逆に遅くなる結果。sf=5 が精度と速度のバランスが最良。
+
+### base_freq 変更
+
+Kubus et al. (2008) が最高周波数を 2Hz に制限していたことを参考に、base_freq を 0.1 → 0.2 に変更。
+最高周波数 = harmonics(5) × base_freq(0.2) = 1.0Hz で、2Hz 制限に対して十分な余裕。
+
+### 本番最適化ラン（FT オフセットなし、20 restarts × 200 iter）
+
+n_workers=6 並列、base_freq=0.2、duration=5s、harmonics=5 で実施:
+
+| dq_max | 条件数 | 速度違反 | workspace違反 | feasible |
+|---|---|---|---|---|
+| 1.5 rad/s | **1.93** | 0.0014 | 0.0006 | No（僅差）|
+| 1.0 rad/s | **2.20** | 0.0019 | 0.0002 | No（僅差）|
+
+条件数は非常に良好。制約違反は極めて小さく（速度 0.1%、workspace 0.6mm 以下）、実用上ほぼ feasible。
+
+### 列スケーリングの数理的背景ノート
+
+FT オフセット拡張時の列スケーリングに関する数理的背景を `docs/notes/column_scaling_background.md` にまとめた。
+Golub & Van Loan (2013) の列均衡化、Swevers et al. (1997)、Gautier & Khalil (1992) のロボット同定での適用、
+Pukelsheim (1993) の D-optimal 設計における知見を整理。
+
+### FT オフセットあり最適化ラン（実行中）
+
+n_workers=4、dq_max=1.0、with_ft_offset + column_scale で ddq_max を 3 条件で比較実行中:
+- ddq_max = 5.0, 2.5, 1.0 rad/s²
