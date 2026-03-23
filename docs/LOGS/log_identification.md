@@ -1013,3 +1013,8 @@ FT センサの観測に定数オフセット `[f_ox, f_oy, f_oz, τ_ox, τ_oy, 
 | `optimizer.py` | `_RestartResult`, `_run_single_restart()`, `_optimize_parallel()`, `_build_final_result()` 追加。`optimize()` を sequential/parallel に分岐 |
 | `configs.py` | `OptimizeExcitationConfig` に `n_workers` 追加 |
 | `optimize_excitation_trajectory.py` | `n_workers`, `model_path` の受け渡し |
+
+### 追記: 並列モードの wandb per-iteration ログ対応
+
+初期実装では並列モードで `iter/*` メトリクスと `restart/n_iters` が欠落していた。
+一括ログ方式で対応: worker 内の callback が iteration メトリクスをリストに蓄積し、restart 完了時にメインプロセスがまとめて wandb に送信。リアルタイム性は失われるが、記録されるデータは逐次モードと同一。
