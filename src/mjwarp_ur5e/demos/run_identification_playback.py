@@ -5,16 +5,15 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-import tyro
 
-from mjwarp_ur5e.cli import PlaybackDemoConfig
+from mjwarp_ur5e.cli import PlaybackDemoConfig, load_config
 from mjwarp_ur5e.identification.execution import PlaybackConfig, TrajectoryPlayback
 from mjwarp_ur5e.identification.io import load_optimization_result, result_to_trajectory
 from mjwarp_ur5e.model import load_and_reset
 
 
 def main() -> None:
-    config = tyro.cli(PlaybackDemoConfig)
+    config = load_config(PlaybackDemoConfig)
 
     print(f"Loading optimization result from {config.result_json}")
     result = load_optimization_result(config.result_json)

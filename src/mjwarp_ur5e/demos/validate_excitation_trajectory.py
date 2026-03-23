@@ -1,16 +1,15 @@
 from __future__ import annotations
 
 import numpy as np
-import tyro
 
-from mjwarp_ur5e.cli import ValidateExcitationConfig
+from mjwarp_ur5e.cli import ValidateExcitationConfig, load_config
 from mjwarp_ur5e.identification.io import load_optimization_result, result_to_trajectory
 from mjwarp_ur5e.identification.optimizer import ExcitationOptimizer
 from mjwarp_ur5e.model import load_and_reset
 
 
 def main() -> None:
-    config = tyro.cli(ValidateExcitationConfig)
+    config = load_config(ValidateExcitationConfig)
 
     result = load_optimization_result(config.result_json)
     loaded = load_and_reset(config.model or None)

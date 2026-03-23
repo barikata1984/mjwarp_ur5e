@@ -4,9 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import tyro
-
-from mjwarp_ur5e.cli import ExportTrajectoryConfig
+from mjwarp_ur5e.cli import ExportTrajectoryConfig, load_config
 from mjwarp_ur5e.identification.io import (
     load_optimization_result,
     result_to_trajectory,
@@ -15,7 +13,7 @@ from mjwarp_ur5e.identification.io import (
 
 
 def main() -> None:
-    config = tyro.cli(ExportTrajectoryConfig)
+    config = load_config(ExportTrajectoryConfig)
 
     result = load_optimization_result(config.result_json)
     output_fps = config.fps if config.fps > 0 else None

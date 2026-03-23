@@ -58,18 +58,26 @@ def main() -> None:
     if config.ee_max_linear_velocity > 0:
         ee_velocity_config = EeVelocityConfig(max_linear_velocity=config.ee_max_linear_velocity)
 
-    # Joint velocity override
+    # Joint limits
     joint_limits: JointLimits | None = None
-    if config.dq_max > 0:
+    has_vel = config.dq_max > 0
+    has_acc = config.ddq_max > 0
+    if has_vel or has_acc:
         from mjwarp_ur5e.identification.constraints import JointLimits
 
-        joint_limits = JointLimits(
-            dq_max=np.full(6, config.dq_max),
-        )
+        kwargs: dict = {}
+        if has_vel:
+            kwargs["dq_max"] = np.full(6, config.dq_max)
+        if has_acc:
+            kwargs["ddq_max"] = np.full(6, config.ddq_max)
+        joint_limits = JointLimits(**kwargs)
+
+    # Fourier bounds only apply when velocity/acceleration limits exist
+    use_fourier_bounds = config.use_fourier_bounds and (has_vel or has_acc)
 
     # When Fourier bounds are enabled, disable the per-timestep velocity constraint
     # (the bounds already guarantee velocity feasibility structurally)
-    enable_vel_constraint = not config.use_fourier_bounds
+    enable_vel_constraint = has_vel and not use_fourier_bounds
 
     opt_config = OptimizerConfig(
         num_joints=6,
@@ -89,9 +97,9 @@ def main() -> None:
         payload_workspace_config=payload_workspace_config,
         ee_velocity_config=ee_velocity_config,
         enable_velocity_constraint=enable_vel_constraint,
-        enable_acceleration_constraint=config.enable_acc_constraint,
-        use_fourier_bounds=config.use_fourier_bounds,
-        include_ft_offset=config.include_ft_offset,
+        enable_acceleration_constraint=has_acc,
+        use_fourier_bounds=use_fourier_bounds,
+        with_ft_offset=config.with_ft_offset,
         ft_offset_column_scale=config.ft_offset_column_scale,
         n_workers=config.n_workers,
         model_path=str(loaded.model_path) if config.n_workers > 1 else None,
@@ -121,17 +129,17 @@ def main() -> None:
         print(f"  wandb: project={config.wandb_project}", flush=True)
     if config.ee_max_linear_velocity > 0:
         print(f"  EE velocity limit: {config.ee_max_linear_velocity} m/s", flush=True)
-    if config.dq_max > 0:
+    if has_vel:
         print(f"  joint velocity limit: {config.dq_max} rad/s (all joints)", flush=True)
-    if config.use_fourier_bounds:
+    if has_acc:
+        print(f"  joint acceleration limit: {config.ddq_max} rad/s^2 (all joints)", flush=True)
+    if use_fourier_bounds:
         print(
             "  Fourier coefficient bounds: ENABLED (velocity constraint via box bounds)", flush=True
         )
-    if config.include_ft_offset:
+    if config.with_ft_offset:
         scale_str = "column-scaled" if config.ft_offset_column_scale else "unscaled"
         print(f"  FT sensor offset estimation: ENABLED (16 params, {scale_str})", flush=True)
-    if not config.enable_acc_constraint:
-        print("  acceleration constraint: DISABLED", flush=True)
     if config.early_stop:
         msg = f"  early stopping: patience={config.early_stop_patience}"
         if config.early_stop_target_cond > 0:

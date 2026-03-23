@@ -11,7 +11,7 @@ from mjwarp_ur5e.cli.configs import (
     ResultInputConfig,
     ValidateExcitationConfig,
 )
-from mjwarp_ur5e.cli.yaml_config import apply_yaml_defaults, load_yaml
+from mjwarp_ur5e.cli.yaml_config import apply_yaml_defaults, load_config, load_yaml
 
 __all__ = [
     "ExportTrajectoryConfig",
@@ -26,5 +26,6 @@ __all__ = [
     "ResultInputConfig",
     "ValidateExcitationConfig",
     "apply_yaml_defaults",
+    "load_config",
     "load_yaml",
 ]

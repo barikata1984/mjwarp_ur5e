@@ -2,14 +2,12 @@ from __future__ import annotations
 
 import json
 
-import tyro
-
-from mjwarp_ur5e.cli import InspectConfig
+from mjwarp_ur5e.cli import InspectConfig, load_config
 from mjwarp_ur5e.inspection import inspect_ur5e_model
 
 
 def main() -> None:
-    config = tyro.cli(InspectConfig)
+    config = load_config(InspectConfig)
     result = inspect_ur5e_model(config.model)
 
     if config.json_output:

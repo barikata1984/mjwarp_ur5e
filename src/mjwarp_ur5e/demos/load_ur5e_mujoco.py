@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import tyro
-
-from mjwarp_ur5e.cli import LoadConfig
+from mjwarp_ur5e.cli import LoadConfig, load_config
 from mjwarp_ur5e.model import load_model, step_model
 
 
 def main() -> None:
-    config = tyro.cli(LoadConfig)
+    config = load_config(LoadConfig)
     loaded_model = load_model(config.model)
     step_model(loaded_model.model, loaded_model.data, config.steps)
 

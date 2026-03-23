@@ -10,9 +10,8 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import tyro
 
-from mjwarp_ur5e.cli import IdentificationDemoConfig
+from mjwarp_ur5e.cli import IdentificationDemoConfig, load_config
 from mjwarp_ur5e.identification.estimators import (
     BatchLeastSquares,
     BatchLSConfig,
@@ -96,7 +95,7 @@ def _print_comparison(true_params: np.ndarray, result: EstimationResult) -> None
 
 
 def main() -> None:
-    config = tyro.cli(IdentificationDemoConfig)
+    config = load_config(IdentificationDemoConfig)
 
     result_path = Path(config.result_json)
     if not result_path.exists():

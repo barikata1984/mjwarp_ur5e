@@ -7,9 +7,8 @@ from pathlib import Path
 import imageio.v3 as iio
 import mujoco
 import numpy as np
-import tyro
 
-from mjwarp_ur5e.cli import RenderPlaybackConfig
+from mjwarp_ur5e.cli import RenderPlaybackConfig, load_config
 from mjwarp_ur5e.identification.io import load_optimization_result, result_to_trajectory
 from mjwarp_ur5e.model import load_and_reset
 from mjwarp_ur5e.rendering import add_ee_frame_overlay
@@ -36,7 +35,7 @@ def _render_single_view(
 
 
 def main() -> None:
-    config = tyro.cli(RenderPlaybackConfig)
+    config = load_config(RenderPlaybackConfig)
 
     print(f"Loading result from {config.result_json}")
     result = load_optimization_result(config.result_json)

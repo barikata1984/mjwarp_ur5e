@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import tyro
-
-from mjwarp_ur5e.cli import RenderConfig
+from mjwarp_ur5e.cli import RenderConfig, load_config
 from mjwarp_ur5e.rendering import RenderSceneRequest, parse_joint_overrides, render_scene
 
 
 def main() -> None:
-    config = tyro.cli(RenderConfig)
+    config = load_config(RenderConfig)
     joint_overrides = parse_joint_overrides(config.set_joint)
     output_path, metadata_path = render_scene(
         RenderSceneRequest(
