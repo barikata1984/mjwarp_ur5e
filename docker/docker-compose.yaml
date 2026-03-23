@@ -54,7 +54,7 @@ services:
       - warp-cache:/home/${USER:-developer}/.cache/warp
 
       # Share Cluade Code setups
-      - ${HOME}/.claude:/home/${USER:-developer}/.claude:ro
+      - ${HOME}/.claude:/home/${USER:-developer}/.claude:cached
         
     # Shared memory for PyTorch DataLoader workers, NCCL, etc.
     ipc: host
