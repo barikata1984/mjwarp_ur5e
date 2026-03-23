@@ -191,7 +191,7 @@ def test_stacked_regressor_with_ft_offset_shape() -> None:
         sample.acceleration,
         PAYLOAD_BODY_NAME,
         subsample_factor=10,
-        include_ft_offset=True,
+        with_ft_offset=True,
     )
     n_samples = regressor.shape[0] // 6
     assert regressor.shape == (n_samples * 6, 16)
@@ -208,7 +208,7 @@ def test_stacked_regressor_ft_offset_identity_block() -> None:
         sample.acceleration,
         PAYLOAD_BODY_NAME,
         subsample_factor=10,
-        include_ft_offset=True,
+        with_ft_offset=True,
     )
     n_samples = regressor.shape[0] // 6
     expected_identity = np.tile(np.eye(6, dtype=np.float64), (n_samples, 1))
@@ -227,8 +227,8 @@ def test_stacked_regressor_ft_offset_preserves_physics() -> None:
         body_name=PAYLOAD_BODY_NAME,
         subsample_factor=10,
     )
-    regressor_base = compute_stacked_body_regressor(**kwargs, include_ft_offset=False)
-    regressor_ext = compute_stacked_body_regressor(**kwargs, include_ft_offset=True)
+    regressor_base = compute_stacked_body_regressor(**kwargs, with_ft_offset=False)
+    regressor_ext = compute_stacked_body_regressor(**kwargs, with_ft_offset=True)
     np.testing.assert_array_equal(regressor_ext[:, 6:], regressor_base)
 
 
@@ -243,7 +243,7 @@ def test_condition_number_column_scale() -> None:
         sample.acceleration,
         PAYLOAD_BODY_NAME,
         subsample_factor=10,
-        include_ft_offset=True,
+        with_ft_offset=True,
     )
     cond_raw = compute_condition_number(regressor, column_scale=False)
     cond_scaled = compute_condition_number(regressor, column_scale=True)

@@ -146,7 +146,7 @@ def compute_stacked_body_regressor(
     ddq: np.ndarray,
     body_name: str,
     subsample_factor: int = 1,
-    include_ft_offset: bool = False,
+    with_ft_offset: bool = False,
 ) -> np.ndarray:
     q_array = np.asarray(q, dtype=np.float64)
     dq_array = np.asarray(dq, dtype=np.float64)
@@ -166,7 +166,7 @@ def compute_stacked_body_regressor(
 
     stacked = np.vstack(rows)
 
-    if include_ft_offset:
+    if with_ft_offset:
         n_samples = len(rows)
         identity_block = np.tile(np.eye(6, dtype=np.float64), (n_samples, 1))
         stacked = np.hstack([identity_block, stacked])
