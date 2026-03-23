@@ -1019,6 +1019,20 @@ FT センサの観測に定数オフセット `[f_ox, f_oy, f_oz, τ_ox, τ_oy, 
 初期実装では並列モードで `iter/*` メトリクスと `restart/n_iters` が欠落していた。
 一括ログ方式で対応: worker 内の callback が iteration メトリクスをリストに蓄積し、restart 完了時にメインプロセスがまとめて wandb に送信。リアルタイム性は失われるが、記録されるデータは逐次モードと同一。
 
+### 追記: wandb ログを restart ごとの独立 run に変更
+
+全 restart を 1 つの wandb run に混在させていたのを、各 restart を独立した run + `group` でグルーピングする構造に変更。逐次・並列の両モードに適用。
+
+```
+group: "<run_name>"
+├── restart-0  (iter step 1..N + summary)
+├── restart-1
+├── ...
+└── summary    (final/* metrics)
+```
+
+各 restart の `condition_number` 収束曲線を wandb ダッシュボード上で個別に比較可能になった。
+
 ## 2026-03-23: YAML-tyro 統合と設定リファクタリング
 
 ### YAML ↔ tyro CLI の統合
