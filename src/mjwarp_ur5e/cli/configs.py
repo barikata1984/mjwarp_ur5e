@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 class ModelConfig:
     """Common model path field used by all demos."""
 
-    model: str = ""
+    model: str = "assets/ur5e/mjcf/scene_with_box.xml"
 
 
 @dataclass(slots=True)
@@ -71,21 +71,21 @@ class OptimizeExcitationConfig(ModelConfig):
     base_freq: float = 1.0 / 3.0
     duration: float = 3.0
     fps: float = 100.0
-    subsample_factor: int = 1
+    subsample_factor: int = 5
     n_monte_carlo: int = 20
     max_iter: int = 200
     seed: int = 42
-    max_displacement: float = 0.5
+    max_displacement: float = 0.0  # m, 0 to disable
     enable_collision: bool = True
     enable_payload_workspace: bool = True
     ee_max_linear_velocity: float = 0.0  # m/s, 0 to disable
-    dq_max: float = 1.5  # rad/s, uniform limit for all joints (0 to use defaults)
-    enable_acc_constraint: bool = False  # Enable joint acceleration constraint
-    use_fourier_bounds: bool = False  # Use analytical Fourier coefficient bounds for velocity
-    include_ft_offset: bool = False  # Augment regressor with FT sensor offset columns (16 params)
+    dq_max: float = 1.5  # rad/s, uniform limit for all joints (0 to disable)
+    ddq_max: float = 0.0  # rad/s^2, uniform limit for all joints (0 to disable)
+    use_fourier_bounds: bool = False  # Fourier coefficient bounds (only when dq_max/ddq_max > 0)
+    with_ft_offset: bool = False  # Augment regressor with FT sensor offset columns (16 params)
     ft_offset_column_scale: bool = True  # Column-scale the augmented regressor before SVD
     n_workers: int = 1  # Number of parallel worker processes (1 = sequential)
-    objective: str = "d_optimal"  # "d_optimal" or "condition_number"
+    objective: str = "condition_number"  # "d_optimal" or "condition_number"
     output: str = "results/excitation_result.json"
     trajectory_output: str = "results/excitation_trajectory.json"
     trajectory_fps: float = 0.0

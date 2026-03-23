@@ -8,30 +8,31 @@ model:
 
 trajectory:
   num_joints: 6
-  num_harmonics: 3
-  base_freq: 0.3333
-  duration: 3.0
+  num_harmonics: 5
+  base_freq: 0.1
+  duration: 5.0
   fps: 100.0
 
 optimizer:
-  subsample_factor: 1
+  subsample_factor: 5
   n_monte_carlo: 20
   max_iter_per_start: 200
   optimizer_method: "SLSQP"
   ftol: 1.0e-6
   seed: 42
+  objective: "condition_number"
 
 joint_limits:
   q_min: [-6.2832, -6.2832, -6.2832, -6.2832, -6.2832, -6.2832]
   q_max: [6.2832, 6.2832, 6.2832, 6.2832, 6.2832, 6.2832]
-  dq_max: [1.5, 1.5, 1.5, 1.5, 1.5, 1.5]  # rad/s
-  ddq_max: [8.0, 8.0, 8.0, 8.0, 8.0, 8.0]  # not enforced by default
+  dq_max: 1.5   # rad/s, 0 to disable
+  ddq_max: 0.0  # rad/s^2, 0 to disable
 
 ee_velocity:
-  max_linear_velocity: 0.0  # disabled by default
+  max_linear_velocity: 0.0  # 0 to disable
 
 workspace:
-  max_displacement: 0.5
+  max_displacement: 0.0  # m, 0 to disable
   safety_margin: 0.01
 
 collision:
