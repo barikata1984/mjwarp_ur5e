@@ -32,7 +32,7 @@
 
 - [x] 回帰行列の `[I₆ | V]` 拡張 (`include_ft_offset`)
 - [x] 列スケーリングオプション (`ft_offset_column_scale`)
-- [x] CLI フラグ (`--include-ft-offset`, `--no-ft-offset-column-scale`)
+- [x] CLI フラグ (`--with-ft-offset`, `--no-ft-offset-column-scale`)
 - [x] 制約デフォルト変更 (dq_max=1.5, 加速度制約OFF, EE速度制約OFF)
 - [x] ペイロードワークスペース制約を 26 サーフェスポイントに変更
 - [x] 制約違反の定量的ログ出力

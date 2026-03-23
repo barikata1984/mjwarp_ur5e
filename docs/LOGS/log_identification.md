@@ -1018,3 +1018,53 @@ FT センサの観測に定数オフセット `[f_ox, f_oy, f_oz, τ_ox, τ_oy, 
 
 初期実装では並列モードで `iter/*` メトリクスと `restart/n_iters` が欠落していた。
 一括ログ方式で対応: worker 内の callback が iteration メトリクスをリストに蓄積し、restart 完了時にメインプロセスがまとめて wandb に送信。リアルタイム性は失われるが、記録されるデータは逐次モードと同一。
+
+## 2026-03-23: YAML-tyro 統合と設定リファクタリング
+
+### YAML ↔ tyro CLI の統合
+
+`yaml_config.py` に `load_config()` を実装し、全9デモスクリプトで `tyro.cli(Config)` → `load_config(Config)` に統一。
+`configs/default.yaml` がベースデフォルト → tyro CLI フラグがオーバーライドする2段構成が実際に機能するようになった。
+
+YAML の値と dataclass フィールドの型が不一致（例: リスト vs スカラー）の場合は型チェックでスキップする安全策を追加。
+
+### 設定デフォルトの変更
+
+| パラメータ | 旧値 | 新値 | 理由 |
+|---|---|---|---|
+| `num_harmonics` | 3 | 5 | より高い周波数成分で励起品質向上 |
+| `base_freq` | 0.3333 | 0.1 | 基本周期を長くする |
+| `duration` | 3.0 | 5.0 | 軌道長の拡大 |
+| `subsample_factor` | 1 | 5 | 速度と精度のバランス |
+| `objective` | `d_optimal` | `condition_number` | 条件数を直接最小化 |
+| `max_displacement` | 0.5 | 0.0 | デフォルト無効化 |
+| `model` | `""` | `assets/ur5e/mjcf/scene_with_box.xml` | 暗黙フォールバックを明示化 |
+
+### 制約セクションのリファクタリング
+
+- `ddq_max: float = 0.0` を新規追加（`0.0` で無効化、`> 0` で有効化）
+- `enable_acc_constraint` を削除（`ddq_max > 0` で代替）
+- `use_fourier_bounds` は `dq_max > 0` or `ddq_max > 0` の場合のみ有効に
+
+### リネーム
+
+- `include_ft_offset` → `with_ft_offset`（全ソースファイル一括置換）
+
+### subsample_factor ベンチマーク
+
+n_monte_carlo=3, max_iter=20, harmonics=5, duration=5s で実測:
+
+| subsample_factor | wall time | 条件数 |
+|---|---|---|
+| 1 | 691.7s | — |
+| 5 | 540.8s | — |
+| 10 | 523.2s | — |
+
+n_monte_carlo=3, max_iter=100 で追加計測:
+
+| subsample_factor | wall time | 最終条件数 |
+|---|---|---|
+| 5 | 2151s | 10.21 |
+| 10 | 2436s | 10.70 |
+
+sf=10 は間引きすぎで勾配精度が低下し、収束が遅れ逆に遅くなる結果。sf=5 が精度と速度のバランスが最良。
