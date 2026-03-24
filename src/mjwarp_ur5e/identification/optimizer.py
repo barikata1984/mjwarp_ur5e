@@ -13,7 +13,7 @@ from mjwarp_ur5e.identification.constraints import (
     JointLimits,
     _TrajectoryCache,
     build_scipy_constraints,
-    compute_fourier_velocity_bounds,
+    compute_fourier_bounds,
 )
 from mjwarp_ur5e.identification.objective import (
     condition_number_objective,
@@ -192,15 +192,22 @@ def _build_cache_and_constraints_static(
 
 
 def _compute_fourier_bounds_static(cfg: OptimizerConfig) -> Bounds | None:
-    """Compute scipy Bounds from analytical Fourier velocity bounds (no instance needed)."""
+    """Compute scipy Bounds from analytical Fourier velocity/acceleration bounds."""
     if not cfg.use_fourier_bounds or cfg.joint_limits is None:
         return None
-    upper = compute_fourier_velocity_bounds(
+    limits = cfg.joint_limits
+    # Pass dq_max/ddq_max only if the corresponding constraint is active
+    dq = limits.dq_max if cfg.enable_velocity_constraint or cfg.use_fourier_bounds else None
+    ddq = limits.ddq_max if cfg.enable_acceleration_constraint else None
+    if dq is None and ddq is None:
+        return None
+    upper = compute_fourier_bounds(
         num_joints=cfg.num_joints,
         num_harmonics=cfg.num_harmonics,
         base_freq=cfg.base_freq,
         duration=cfg.duration,
-        dq_max=cfg.joint_limits.dq_max,
+        dq_max=dq,
+        ddq_max=ddq,
     )
     return Bounds(lb=-upper, ub=upper)
 

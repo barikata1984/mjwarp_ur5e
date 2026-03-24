@@ -143,49 +143,76 @@ def make_joint_acceleration_constraint(
     return constraint
 
 
-def compute_fourier_velocity_bounds(
+def compute_fourier_bounds(
     num_joints: int,
     num_harmonics: int,
     base_freq: float,
     duration: float,
-    dq_max: np.ndarray,
+    dq_max: np.ndarray | None = None,
+    ddq_max: np.ndarray | None = None,
 ) -> np.ndarray:
-    """Compute per-coefficient box bounds from velocity limits via triangle inequality.
+    """Compute per-coefficient box bounds from velocity/acceleration limits.
 
-    For the windowed Fourier trajectory v_j(t) = w'(t)*osc_j(t) + w(t)*osc_j'(t),
-    the triangle inequality gives the sufficient condition:
+    Uses the triangle inequality on the windowed Fourier trajectory to derive
+    sufficient conditions for velocity and/or acceleration feasibility.
 
-        sum_k (|a_{j,k}| + |b_{j,k}|) * alpha_k  <=  dq_max_j
+    For velocity, v_j(t) = w'(t)*osc_j(t) + w(t)*osc_j'(t):
 
-    where alpha_k = max|w'(t)| + 2*pi*base_freq*k  (velocity gain per harmonic).
+        |a_{j,k}|, |b_{j,k}|  <=  dq_max_j / (2 * N_h * alpha_k^vel)
+        alpha_k^vel = max|w'(t)/T| + 2*pi*f0*k
 
-    Allocating budget uniformly across harmonics yields per-coefficient box bounds:
+    For acceleration, a_j(t) = w''(t)*osc_j(t) + 2*w'(t)*osc_j'(t) + w(t)*osc_j''(t):
 
-        |a_{j,k}|, |b_{j,k}|  <=  dq_max_j / (2 * N_h * alpha_k)
+        |a_{j,k}|, |b_{j,k}|  <=  ddq_max_j / (2 * N_h * alpha_k^acc)
+        alpha_k^acc = max|w''(t)/T^2| + 2*max|w'(t)/T|*(2*pi*f0*k) + (2*pi*f0*k)^2
 
-    Returns the upper bound array with same layout as the flat decision vector x.
+    When both limits are provided, the tighter (smaller) bound is used per coefficient.
     """
-    # max |w'(s)| for w(s) = 64 s^3 (1-s)^3, computed on fine grid
-    s = np.linspace(0, 1, 10_000)
-    dw_ds = 192.0 * s**2 - 768.0 * s**3 + 960.0 * s**4 - 384.0 * s**5
-    dw_dt_max = float(np.max(np.abs(dw_ds))) / duration
+    if dq_max is None and ddq_max is None:
+        raise ValueError("At least one of dq_max or ddq_max must be provided")
 
+    s = np.linspace(0, 1, 10_000)
     harmonics = np.arange(1, num_harmonics + 1, dtype=np.float64)
     omega = 2.0 * np.pi * base_freq * harmonics
-    alpha = dw_dt_max + omega  # per-harmonic velocity gain (w_max = 1)
 
     n = num_joints * num_harmonics
-    upper = np.empty(2 * n, dtype=np.float64)
+    upper = np.full(2 * n, np.inf, dtype=np.float64)
 
-    # x layout (C-order reshape): a[j, k] = x[j * num_harmonics + k]
-    for j in range(num_joints):
-        for k in range(num_harmonics):
-            bound = float(dq_max[j]) / (2.0 * num_harmonics * alpha[k])
-            idx = j * num_harmonics + k
-            upper[idx] = bound
-            upper[n + idx] = bound
+    # Velocity bounds
+    if dq_max is not None:
+        # w(s) = 64 s^3 (1-s)^3, w'(s) = 192 s^2 - 768 s^3 + 960 s^4 - 384 s^5
+        dw_ds = 192.0 * s**2 - 768.0 * s**3 + 960.0 * s**4 - 384.0 * s**5
+        dw_dt_max = float(np.max(np.abs(dw_ds))) / duration
+        alpha_vel = dw_dt_max + omega
+
+        for j in range(num_joints):
+            for k in range(num_harmonics):
+                bound = float(dq_max[j]) / (2.0 * num_harmonics * alpha_vel[k])
+                idx = j * num_harmonics + k
+                upper[idx] = min(upper[idx], bound)
+                upper[n + idx] = min(upper[n + idx], bound)
+
+    # Acceleration bounds
+    if ddq_max is not None:
+        # w''(s) = 384 s - 2304 s^2 + 3840 s^3 - 1920 s^4
+        dw_ds = 192.0 * s**2 - 768.0 * s**3 + 960.0 * s**4 - 384.0 * s**5
+        d2w_ds2 = 384.0 * s - 2304.0 * s**2 + 3840.0 * s**3 - 1920.0 * s**4
+        dw_dt_max = float(np.max(np.abs(dw_ds))) / duration
+        d2w_dt2_max = float(np.max(np.abs(d2w_ds2))) / (duration**2)
+        alpha_acc = d2w_dt2_max + 2.0 * dw_dt_max * omega + omega**2
+
+        for j in range(num_joints):
+            for k in range(num_harmonics):
+                bound = float(ddq_max[j]) / (2.0 * num_harmonics * alpha_acc[k])
+                idx = j * num_harmonics + k
+                upper[idx] = min(upper[idx], bound)
+                upper[n + idx] = min(upper[n + idx], bound)
 
     return upper
+
+
+# Backward-compatible alias
+compute_fourier_velocity_bounds = compute_fourier_bounds
 
 
 def build_scipy_constraints(
