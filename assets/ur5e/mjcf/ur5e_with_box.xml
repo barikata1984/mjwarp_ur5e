@@ -63,12 +63,12 @@
 
   <worldbody>
     <light name="spotlight" mode="targetbodycom" target="wrist_2_link" pos="0 -1 2"/>
-    <body name="base" quat="0 0 0 -1" childclass="ur5e">
+    <body name="base" quat="1 0 0 0" childclass="ur5e">
       <inertial mass="4.0" pos="0 0 0" diaginertia="0.00443333156 0.00443333156 0.0072"/>
       <geom mesh="base_0" material="black" class="visual"/>
       <geom mesh="base_1" material="jointgray" class="visual"/>
-      <body name="workspace_region" pos="-0.034 0.64199881 0.479">
-        <geom name="workspace_region_geom" type="box" size="0.35 0.45 0.409" material="workspace_region_material"
+      <body name="workspace_region" pos="0.05 0.6 0.275">
+        <geom name="workspace_region_geom" type="box" size="0.25 0.2 0.225" material="workspace_region_material"
           contype="0" conaffinity="0" density="0"/>
       </body>
       <body name="shoulder_link" pos="0 0 0.163">
@@ -119,8 +119,8 @@
                   <geom class="eef_collision" pos="0 0.08 0" quat="1 1 0 0" size="0.04 0.02"/>
                   <site name="attachment_site" pos="0 0.1 0" quat="-1 1 0 0"/>
                   <body name="payload_box_mount" pos="0 0.1 0" quat="-1 1 0 0">
-                    <inertial pos="0 -0.1 0.125" mass="1.0" diaginertia="0.0104167 0.0104167 0.0104167"/>
-                    <geom name="payload_box" type="box" pos="0 -0.1 0.125" size="0.125 0.125 0.125" material="payload_box_material" density="0"/>
+                    <inertial pos="0 -0.1 0.1" mass="1.0" diaginertia="0.0085417 0.0041667 0.0060417"/>
+                    <geom name="payload_box" type="box" pos="0 -0.1 0.1" size="0.05 0.125 0.1" material="payload_box_material" density="0"/>
                   </body>
                 </body>
               </body>
