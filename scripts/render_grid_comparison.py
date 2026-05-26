@@ -23,10 +23,8 @@ def _draw_label(image: np.ndarray, text: str) -> np.ndarray:
 
 def main() -> None:
     result_paths = [
-        ("scaled dq=2.0 5s", "results/ft_offset_dq2.0_5s/excitation_result.json"),
-        ("scaled dq=1.5 10s", "results/ft_offset_dq1.5_10s/excitation_result.json"),
-        ("unscaled dq=2.0 5s", "results/ft_offset_noscale_dq2.0_5s/excitation_result.json"),
-        ("unscaled dq=1.5 10s", "results/ft_offset_noscale_dq1.5_10s/excitation_result.json"),
+        ("baseline 3s mc4 fb", "results/excitation_result.json"),
+        ("mc20 3s fb", "results/excitation_result_mc20.json"),
     ]
 
     # Load all results and trajectories
@@ -50,7 +48,7 @@ def main() -> None:
     video_duration = max_duration
     n_video_frames = int(video_duration * video_fps)
 
-    loaded = load_and_reset()
+    loaded = load_and_reset("assets/ur5e/mjcf/scene_with_box.xml")
     model, data = loaded.model, loaded.data
 
     tile_w, tile_h = 640, 480
