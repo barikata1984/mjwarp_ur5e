@@ -36,16 +36,30 @@
 - [x] 制約デフォルト変更 (dq_max=1.5, 加速度制約OFF, EE速度制約OFF)
 - [x] ペイロードワークスペース制約を 26 サーフェスポイントに変更
 - [x] 制約違反の定量的ログ出力
-- [ ] 列スケーリングの妥当性検証（スケールあり/なしの推定精度比較）
-- [ ] feasible 解が得られる制約設定の探索（特に 10s 条件）
+- [ ] 列スケーリングの妥当性検証(スケールあり/なしの推定精度比較)
+- [ ] feasible 解が得られる制約設定の探索(特に 10s 条件)
+
+## FT センサベースの同定・wrench 計測
+
+- [x] MuJoCo force/torque sensor を tool0 (`ft_sensor` site) に追加
+- [x] PD playback の制御入力バグ修正(servo 目標角度・substep・実測 qacc)
+- [x] settling phase 追加(home の重力下平衡への整定)
+- [x] wrench 符号反転(実機 FT 規約 child→parent に整合)
+- [x] flange wrench プロットスクリプト(共通スパン・重力 tare)
+- [x] FT センサ wrench での LS 同定検証(質量・重心 誤差 0%, 重力二重計上バグを特定・修正)
+- [x] Kubus 2007 論文サマリ作成
+- [ ] FT センサ整合 regressor を `identification/` に正式実装
+- [ ] 推定慣性の CoM まわりへの変換(平行軸定理)と真値一致確認
+- [ ] PD 追従誤差が同定精度・sim-real ギャップに与える影響評価
 
 ## 最適化品質の改善 — feasible 解の獲得 (→ `docs/ISSUES.md`)
 
-- [ ] 制約の段階的評価（安い制約で早期棄却し FK ループをスキップ）
+- [ ] 制約の段階的評価(安い制約で早期棄却し FK ループをスキップ)
 - [ ] collision constraint の高速化 (FK ループ共有化)
 - [ ] 最適化アルゴリズムの変更 (SLSQP → COBYLA or IPOPT) ← バウンド導入後に再評価
 - [x] 並列 Monte Carlo 最適化の実装 (`ProcessPoolExecutor`, 設計済み)
 - [ ] `EarlyStopConfig.min_improvement` の early stopping ロジックへの組み込み
+- [ ] 目的関数へのワークスペースカバレッジ項導入の検討(条件数最小化単独では作業空間全体を使い切らないことが 3 仮説検証で確認された)
 
 ## インフラ・共通
 

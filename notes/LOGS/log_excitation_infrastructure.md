@@ -372,3 +372,34 @@ Pukelsheim (1993) の D-optimal 設計における知見を整理。
 ### FT オフセットあり最適化ラン（実行中）
 
 n_workers=4、dq_max=1.0、with_ft_offset + column_scale で ddq_max を 3 条件で比較実行中:
+
+## 2026-05-07: scene_with_box.xml ジオメトリ更新
+
+新しい task setup に向けてシーンのジオメトリを更新した。
+
+### 変更内容（[assets/ur5e/mjcf/ur5e_with_box.xml](../../assets/ur5e/mjcf/ur5e_with_box.xml)）
+
+| 要素 | 旧 | 新 |
+|---|---|---|
+| `base` body の `quat` | `0 0 0 -1` (Z 軸 180°) | `1 0 0 0` (恒等) |
+| `workspace_region` の `pos` | `-0.034 0.642 0.479` | `0.05 0.6 0.275` |
+| `workspace_region` の `size` (half) | `0.35 0.45 0.409` (70×90×82 cm) | `0.25 0.2 0.225` (50×40×45 cm) |
+| `payload_box` の `size` (half) | `0.125 0.125 0.125` (25×25×25 cm 立方体) | `0.05 0.125 0.1` (10×25×20 cm 直方体) |
+| `payload_box` の `inertial.pos` z | `0.125` | `0.1` (`half_z` に追従) |
+| `payload_box` の `diaginertia` | `0.0104167 ×3` | `0.0085417 0.0041667 0.0060417` (一様密度直方体 `m·(b²+c²)/12`) |
+
+### 新作業領域 AABB（base frame 基準）
+
+- x: [-0.2, 0.3]（幅 50 cm）
+- y: [0.4, 0.8]（幅 40 cm）
+- z: [0.05, 0.5]（高さ 45 cm、当初 0.45 から +5 cm 上端を拡張）
+
+### 新ペイロード仕様
+
+- 形状: 10×25×20 cm 薄板（tool0 z 方向 = `size[2]` = 20 cm）
+- 質量: 1 kg（変更なし）
+- 慣性: 一様密度直方体として再計算
+
+### コミット
+
+`f6b56e5 refactor: revise scene_with_box geometry for new task setup`

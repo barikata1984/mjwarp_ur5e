@@ -526,3 +526,93 @@ dq_max=1.0 ではバウンドなしだと SLSQP が制約を無視（実測 6 �
 2. **dq_max=1.5 に対し実測は 0.3〜0.75**: フーリエバウンドが速度を保守的に制限
 3. **ddq_max=10.0 でも実測は 3.15〜3.28**: 加速度バウンドより速度バウンドが支配的
 4. infeasible 2件はいずれも payload_workspace の境界上（margin=-0.000000）
+
+
+## 2026-05-07: シーン更新後の baseline と 3 仮説検証
+
+### 実施内容
+
+`scene_with_box.xml` のジオメトリを更新（base body Z 軸 +180° 回転、workspace_region を 50×40×45 cm に縮小、payload_box を 10×25×20 cm の薄板に変更）し、新しい task setup で励起軌道最適化を実行。「最適化結果が作業空間全体を活かしていない」という指摘に対し、3 仮説を並列検証した。
+
+### Baseline (3s, mc4, Fourier bounds, dq=1.5, ddq=10)
+
+| 項目 | 値 |
+|---|---|
+| 条件数 | **7.40** |
+| feasible | True (4 リスタート中 1) |
+| payload_workspace margin | 0.0（境界張り付き）|
+| 実測 dq_max | 0.70 (設定 1.5 の 47%) |
+| 実測 ddq_max | 3.25 (設定 10 の 33%) |
+| Wall time | 506 s |
+
+### 3 仮説並列検証結果
+
+| 仮説 | 設定 | 最良 cond | feasible | 結論 |
+|---|---|---|---|---|
+| baseline | 3s, mc4, fb | 7.40 | ✓ | 基準 |
+| A: 局所最適 | mc20 (max_iter=100) | 7.57 (feasible 中) / 7.10 (infeasible) | 4/20 | わずかに悪化、baseline は実質大域最適 |
+| B: bounds 影響 | `--no-use-fourier-bounds` | 2.04 | 全て ✗ (margin -0.63) | bounds は制約遵守に必須 |
+| C: duration | 5s | 8.61 | 全て ✗ | duration 単独では改善せず |
+
+### 分析
+
+1. **baseline は実質大域最適**: mc20 (5 倍リスタート) でも最良 feasible cond は 7.57 で baseline 7.40 を超えられない。SLSQP は狭い AABB 内で条件数 7.4 を達成する解を効率的に見つけている。
+2. **Fourier bounds の役割**: ペイロードの workspace 制約は順運動学が絡むため Fourier 係数 bounds に変換できず inequality のまま残る。bounds を外すと SLSQP の per-timestep 制約 (`min(margin)` 関数) は非滑らかで収束しづらく、cond は劇的に改善するが全例 infeasible になる。
+3. **duration 延長が効かない理由**: 表現自由度は増えるが、新しい狭い AABB (50×40×45 cm) に対し既に最適解が見つかっているため、追加の自由度が活用されていない。
+4. **「作業空間全体を活かさない」現象は仕様通り**: 目的関数は条件数最小化のみで、空間カバレッジ項は含まれていない。条件数 7.4 が達成可能なら SLSQP は AABB 全体を埋める動機を持たない。空間カバレッジを増やしたい場合は目的関数に `λ · (1 / coverage)` 等を加える設計変更が必要。
+
+### 残タスク
+
+- `notes/TODO.md` に「目的関数へのワークスペースカバレッジ項導入の検討」を追加
+
+## 2026-05-26: FT センサ方式への移行と慣性パラメータ同定検証
+
+### 背景
+
+これまでの wrench は解析 regressor (`compute_wrench_from_parameters`, `I·a` 逆動力学) で計算しており、実機 FT センサと符号・成分順・物理量が一致しなかった。MuJoCo の force/torque sensor を導入し実機 FT に近づけた。
+
+### 実施した変更
+
+1. **MJCF にセンサ追加** ([assets/ur5e/mjcf/ur5e_with_box.xml](../../assets/ur5e/mjcf/ur5e_with_box.xml)): `payload_box_mount` 原点に `ft_sensor` site (tool0 と pos/quat 一致を確認), `<force>`/`<torque>` センサを定義。
+2. **PD playback の 3 バグ修正** ([src/mjwarp_ur5e/identification/execution.py](../../src/mjwarp_ur5e/identification/execution.py)):
+   - バグ1: `data.ctrl = tau` (トルク) → `data.ctrl = q_des` (目標角度)。MJCF actuator は position-velocity servo (kp=2000/500, kd=400/100) で ctrl は目標角度を取る。
+   - バグ2: 1 ステップ `mj_step` → `n_substeps`(=5) ループ。軌道 dt=0.01s に対しモデル timestep=0.002s なので 5 回回さないと物理時間が 1/5 しか進まない。
+   - バグ3: `ddq_meas = ddq_des` (理想) → `data.qacc` (実測)。
+3. **settling phase 追加**: 記録前に初期目標で 1s (`settle_time`) 整定。home keyframe は静的平衡でない (servo は重力補償しないため qacc=18.67 が湧く) ので, 整定しないと初期数ステップに大きな加速度過渡が乗る。整定で frame0 の ddq_max が 2.97→0.003 に低減。
+4. **wrench をセンサ読み取り + 符号反転**: `data.sensordata` から `[Fx,Fy,Fz,Mx,My,Mz]` (tool0 frame) を読む。MuJoCo 規約は parent→child の支持力 (静止 Fz=-9.81) なので, 実機 FT 規約 (child→parent, 荷重がフランジに及ぼす力) に合わせ全成分を符号反転 (静止 Fz=+9.81)。
+
+### センサが測る物理量 (コード+MuJoCo doc で確定)
+
+- force/torque sensor は site が属する body (child=`payload_box_mount`) と親 (parent=`wrist_3_link`) 間の相互作用力。`mj_rnePostConstraint` で全力 (接触・拘束・外乱含む) を計算。
+- frame: site frame = tool0。基準点: site 原点 = フランジ面 (CoM ではない)。
+- 符号反転後は「荷重 (ペイロード) がフランジに及ぼす力・トルク」= 実機 FT 相当。
+
+### 慣性パラメータ同定検証 (Kubus 2007 eq.5)
+
+[[papers/Kubus-IROS2007-On-line_Rigid_Object/on-line-rigid-object-recognition-and-pose-estimation-based-on-inertial-parameters|Kubus+ 2007]] の eq.5 回帰行列 V (`[Sf;Sτ]` 順, sensor frame) を実装し, FT センサ実測 wrench を y として LS 同定。
+
+| パラメータ | 真値 | LS 推定 | 誤差 |
+|---|---|---|---|
+| 質量 | 0.927 kg | 0.927 | **0.0%** |
+| 重心 | [0, -0.1, 0.1] | [0, -0.1, 0.1] | **0.0%** |
+| 残差ノルム | - | 0.0 | - |
+
+### 重大な落とし穴 — 重力の二重計上 (FTA で特定)
+
+当初 LS 同定で質量が**ちょうど半分** (0.464 kg) になった。原因切り分け (fault-tree-debug 相当) の結果:
+
+- **MuJoCo `mj_objectAcceleration` が返す線形加速度は重力を含む proper acceleration** (静止時 a_lin = -g_sensor)。
+- 論文 eq.1 の `f = m·(a - g)` の `(a - g)` に対応するのは, この `mj_objectAcceleration` の出力**そのもの**。
+- なのに当初コードは `a_lin - g_sensor` とさらに重力を引き, `(-g) - g = -2g` の二重計上。force の m 列が 2 倍になり質量が半分に推定された (係数 2 で完全に説明)。
+- 修正: `mj_objectAcceleration` の線形成分をそのまま `(a-g)` として使う → 質量・重心が誤差 0% で復元。
+
+### 分析
+
+- 慣性対角推定値 [0.0265, 0.0131, 0.0149] は `m.body_inertia` [0.0079, 0.0039, 0.0056] と異なるが, これは前者がセンサ原点 (フランジ面) まわり, 後者が CoM まわりという基準点の違い。平行軸定理で変換すれば一致するはず (残差ゼロが推定の正しさを保証)。
+- Kubus 2007 §IX が指摘する「シミュレーション条件数と実機条件数の乖離」(sim 6.5-8.2 vs exp 14.4-23.4) は, 当プロジェクトの「最適化軌道を追従させると wrench が想定と合わない」現象と同根の課題。
+
+### 残課題
+
+- FT センサ整合の regressor を `identification/` に正式実装 (現状は検証スクリプトのみ)
+- 推定慣性の CoM まわりへの変換と真値一致確認
+- PD 追従誤差 (max_pos_err≈0.097 rad) が同定精度に与える影響の評価
