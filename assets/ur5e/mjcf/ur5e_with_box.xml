@@ -119,8 +119,9 @@
                   <geom class="eef_collision" pos="0 0.08 0" quat="1 1 0 0" size="0.04 0.02"/>
                   <site name="attachment_site" pos="0 0.1 0" quat="-1 1 0 0"/>
                   <body name="payload_box_mount" pos="0 0.1 0" quat="-1 1 0 0">
-                    <inertial pos="0 -0.1 0.1" mass="1.0" diaginertia="0.0085417 0.0041667 0.0060417"/>
+                    <inertial pos="0 -0.1 0.1" mass="0.927" diaginertia="0.0079181 0.0038625 0.0056007"/>
                     <geom name="payload_box" type="box" pos="0 -0.1 0.1" size="0.05 0.125 0.1" material="payload_box_material" density="0"/>
+                    <site name="ft_sensor" pos="0 0 0" size="0.01"/>
                   </body>
                 </body>
               </body>
@@ -139,6 +140,11 @@
     <general class="size1" name="wrist_2" joint="wrist_2_joint"/>
     <general class="size1" name="wrist_3" joint="wrist_3_joint"/>
   </actuator>
+
+  <sensor>
+    <force name="ft_force" site="ft_sensor"/>
+    <torque name="ft_torque" site="ft_sensor"/>
+  </sensor>
 
   <keyframe>
     <key name="home" qpos="1.5707963267948966 -1.5708 1.5708 -1.5708 -1.5708 0" ctrl="1.5707963267948966 -1.5708 1.5708 -1.5708 -1.5708 0"/>
