@@ -30,3 +30,7 @@ docker/docker-compose.override.yaml
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Paper PDFs (copyrighted, large) — keep summary notes only
+literature/**/*.pdf
+literature/*.pdf
