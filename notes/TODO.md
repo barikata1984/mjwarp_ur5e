@@ -52,6 +52,16 @@
 - [ ] 推定慣性の CoM まわりへの変換(平行軸定理)と真値一致確認
 - [ ] PD 追従誤差が同定精度・sim-real ギャップに与える影響評価
 
+## ペイロードを Robotiq 2F-85 グリッパへ切替
+
+- [x] Menagerie から 2F-85 資産取得・配置 (`assets/robotiq_2f85/`)
+- [x] `ur5e_with_gripper.xml` / `scene_with_gripper.xml` 作成 (クラス・material・body 名衝突回避)
+- [x] FT センサを tool0 整合点に配置, home keyframe を 14 qpos / 7 ctrl に拡張
+- [x] 指全開保持 (actuator ctrl=0) で軌道追従 + FT 記録 (`playback_gripper.npz`)
+- [x] FT wrench プロット (`flange_wrench_gripper.png`) と再生動画 (`playback_gripper.mp4`)
+- [x] `execution.py` の単一剛体 `params` 解決を遅延化 (FT 経路で不在 body 名を許容)
+- [ ] グリッパサブツリー合成慣性の算出 (全開固定剛体としての同定真値)
+
 ## 最適化品質の改善 — feasible 解の獲得 (→ `docs/ISSUES.md`)
 
 - [ ] 制約の段階的評価(安い制約で早期棄却し FK ループをスキップ)

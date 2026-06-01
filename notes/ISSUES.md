@@ -19,12 +19,6 @@
 - `min_improvement: float = 1e-3` フィールドが定義されているが, early stopping ロジックでは厳密な改善 (`cond < best_cond`) のみを判定
 - 微小改善を無視する閾値として `min_improvement` を組み込む必要がある
 
-## FT センサ整合 regressor の正式実装
-
-- FT センサ実測 wrench での同定は検証スクリプトのみで, `identification/` に未実装
-- 既存 `rigid_body_wrench_regressor` は `[torque;force]` 順・mj_kinematics ベース・重力を types.py で減算する定式化. FT センサ整合版は `[force;torque]` 順・mj_step ベース・`mj_objectAcceleration` の proper acceleration をそのまま使う (重力を二重に引かない)
-- 両者の関係を整理し, FT センサ同定経路を正式に組み込む必要がある
-
 ## 推定慣性の基準点が CoM でない
 
 - FT センサ同定で得る慣性はセンサ原点 (フランジ面) まわり. `m.body_inertia` (CoM まわり) と直接比較できない
