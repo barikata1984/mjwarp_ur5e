@@ -172,9 +172,9 @@ def test_collision_auto_extracts_payload_geometry() -> None:
     """CollisionChecker should auto-extract payload box geometry from model."""
     loaded = _load_scene()
     checker = CollisionChecker(loaded.model, loaded.data)
-    # Actual MJCF payload box: half_extents=[0.125, 0.125, 0.125], offset=[0, -0.1, 0.125]
-    np.testing.assert_allclose(checker._payload_half_extents, [0.125, 0.125, 0.125])
-    np.testing.assert_allclose(checker._payload_offset, [0, -0.1, 0.125])
+    # payload_box_red geom: half_extents=[0.05, 0.15, 0.05], offset=[0, 0, 0.05]
+    np.testing.assert_allclose(checker._payload_half_extents, [0.05, 0.15, 0.05])
+    np.testing.assert_allclose(checker._payload_offset, [0, 0, 0.05])
 
 
 def test_collision_home_config_safe_with_actual_geometry() -> None:

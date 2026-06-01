@@ -7,7 +7,7 @@ import mujoco
 import numpy as np
 
 from mjwarp_ur5e.identification.constraints import _TrajectoryCache
-from mjwarp_ur5e.identification.workspace import _box_vertices
+from mjwarp_ur5e.identification.workspace import _box_vertices, find_payload_constraint_geom
 from mjwarp_ur5e.model import get_named_object_id
 
 # UR5e link body names (shoulder through wrist_3)
@@ -80,12 +80,18 @@ def _extract_link_capsules(
     return result
 
 
-def _find_payload_box_geom(model: mujoco.MjModel, body_id: int) -> tuple[np.ndarray, np.ndarray]:
-    """Return (half_extents, geom_offset) of the first box geom on a body."""
-    for gi in range(model.ngeom):
-        if model.geom_bodyid[gi] == body_id and model.geom_type[gi] == mujoco.mjtGeom.mjGEOM_BOX:
-            return model.geom_size[gi].copy(), model.geom_pos[gi].copy()
-    raise ValueError(f"No box geom found on body {body_id}")
+def _find_payload_box_geom(
+    model: mujoco.MjModel, body_name: str = "payload_box_mount"
+) -> tuple[int, np.ndarray, np.ndarray]:
+    """Return (geom_parent_body_id, half_extents, geom_offset) of the constraint box.
+
+    Resolves the box from the subtree of `body_name`, preferring the red payload
+    block, and returns the geom's own parent body id so the pose can be read from
+    the correct (possibly nested) frame.
+    """
+    geom_id = find_payload_constraint_geom(model, body_name)
+    parent_body_id = int(model.geom_bodyid[geom_id])
+    return parent_body_id, model.geom_size[geom_id].copy(), model.geom_pos[geom_id].copy()
 
 
 def _segment_aabb_distance(p1: np.ndarray, p2: np.ndarray, half_extents: np.ndarray) -> float:
@@ -136,7 +142,6 @@ class CollisionChecker:
             self._link_body_ids.append(bid)
 
         payload_id = get_named_object_id(model, mujoco.mjtObj.mjOBJ_BODY, "payload_box_mount")
-        self._payload_body_id = payload_id
 
         # Self-collision radii (sphere-sphere, tuned defaults for UR5e)
         self._self_radii = np.array(self.config.self_collision_radii, dtype=np.float64)
@@ -144,17 +149,22 @@ class CollisionChecker:
         # Extract capsule geoms per link for accurate box-capsule collision
         self._link_capsules = _extract_link_capsules(model, self._link_body_ids)
 
-        # Payload box geometry: from config or auto-extract from model
+        # Payload box geometry: from config or auto-extract from model. The box may
+        # live on a nested child body (red block), so track the geom's own parent
+        # body id for correct pose evaluation.
         if self.config.payload_half_extents is not None and self.config.payload_offset is not None:
+            self._payload_body_id = payload_id
             self._payload_half_extents = np.array(
                 self.config.payload_half_extents, dtype=np.float64
             )
             self._payload_offset = np.array(self.config.payload_offset, dtype=np.float64)
         elif payload_id is not None:
-            he, off = _find_payload_box_geom(model, payload_id)
+            geom_body_id, he, off = _find_payload_box_geom(model, "payload_box_mount")
+            self._payload_body_id = geom_body_id
             self._payload_half_extents = he
             self._payload_offset = off
         else:
+            self._payload_body_id = None
             self._payload_half_extents = np.zeros(3)
             self._payload_offset = np.zeros(3)
 

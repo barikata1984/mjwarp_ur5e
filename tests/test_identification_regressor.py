@@ -59,15 +59,15 @@ def test_body_inertial_parameters_extract_expected_payload_values() -> None:
     loaded = _load_payload_scene()
     parameters = body_inertial_parameters_from_model(loaded.model, PAYLOAD_BODY_NAME)
 
-    np.testing.assert_allclose(parameters.mass, 1.0)
-    np.testing.assert_allclose(parameters.first_moments, np.array([0.0, -0.1, 0.125]))
+    np.testing.assert_allclose(parameters.mass, 0.9)
+    np.testing.assert_allclose(parameters.first_moments, np.array([0.0, 0.0, 0.1425]))
     np.testing.assert_allclose(
         parameters.inertia_matrix,
         np.array(
             [
-                [0.0360417, 0.0, 0.0],
-                [0.0, 0.0260417, 0.0125],
-                [0.0, 0.0125, 0.0204167],
+                [0.0315, 0.0, 0.0],
+                [0.0, 0.0275, 0.0],
+                [0.0, 0.0, 0.0055],
             ]
         ),
         atol=1e-6,
@@ -85,11 +85,22 @@ def test_sample_body_regressor_has_expected_shape() -> None:
 def test_static_pose_regressor_predicts_gravity_wrench() -> None:
     loaded = _load_payload_scene()
     parameters = body_inertial_parameters_from_model(loaded.model, PAYLOAD_BODY_NAME)
+    # Set an explicit static state. reset_to_home runs mj_forward, which leaves a
+    # non-zero forward-dynamics qacc that the site regressor (via mj_inverse) would
+    # otherwise pick up; set_model_state pins qvel=qacc=0.
+    set_model_state(
+        loaded.model,
+        loaded.data,
+        loaded.data.qpos.copy(),
+        np.zeros(loaded.model.nv),
+        np.zeros(loaded.model.nv),
+    )
     sample = sample_body_regressor(loaded.model, loaded.data, PAYLOAD_BODY_NAME)
     wrench = compute_wrench_from_parameters(sample.regressor, parameters)
 
     assert wrench.shape == (6,)
-    assert np.linalg.norm(wrench[3:]) > 1.0
+    # Static gravity reaction: |force| = m*g = 0.9 * 9.81 = 8.829 N.
+    np.testing.assert_allclose(np.linalg.norm(wrench[3:]), 8.829, atol=1e-3)
 
 
 def test_stacked_body_regressor_shape_and_condition_number_change_with_motion() -> None:

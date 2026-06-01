@@ -135,6 +135,44 @@ def _box_surface_points(half_extents: np.ndarray, offset: np.ndarray) -> np.ndar
     return surface * half_extents + offset
 
 
+def find_payload_constraint_geom(
+    model: mujoco.MjModel,
+    body_name: str,
+    preferred_geom: str = "payload_box_red",
+) -> int:
+    """Return the geom id of the box used for payload workspace/collision constraints.
+
+    Searches the subtree rooted at `body_name` (the body and all its descendants),
+    so the geom may live on a nested child body. If a geom named `preferred_geom`
+    exists in the subtree it is chosen; otherwise the first box geom is used.
+    """
+    root_id = get_named_object_id(model, mujoco.mjtObj.mjOBJ_BODY, body_name)
+    if root_id is None:
+        raise ValueError(f"Unknown body: {body_name}")
+
+    def in_subtree(bid: int) -> bool:
+        while bid != 0:
+            if bid == root_id:
+                return True
+            bid = int(model.body_parentid[bid])
+        return root_id == 0
+
+    first_box: int | None = None
+    for gi in range(model.ngeom):
+        if model.geom_type[gi] != mujoco.mjtGeom.mjGEOM_BOX:
+            continue
+        if not in_subtree(int(model.geom_bodyid[gi])):
+            continue
+        if mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, gi) == preferred_geom:
+            return gi
+        if first_box is None:
+            first_box = gi
+
+    if first_box is None:
+        raise ValueError(f"No box geom found in subtree of body: {body_name}")
+    return first_box
+
+
 def _evaluate_payload_surface_points(
     model: mujoco.MjModel,
     data: mujoco.MjData,
@@ -144,20 +182,11 @@ def _evaluate_payload_surface_points(
     """Return payload geom surface sample positions (n_steps, 26, 3) in world frame.
 
     Samples 26 points on the box surface: 8 vertices, 12 edge midpoints, 6 face centers.
+    The box geom is resolved from the subtree of `body_name` (preferring the red
+    payload block) and transformed by its own parent body's world frame.
     """
-    body_id = get_named_object_id(model, mujoco.mjtObj.mjOBJ_BODY, body_name)
-    if body_id is None:
-        raise ValueError(f"Unknown body: {body_name}")
-
-    # Find the first box geom attached to this body
-    geom_id: int | None = None
-    for gi in range(model.ngeom):
-        if model.geom_bodyid[gi] == body_id and model.geom_type[gi] == mujoco.mjtGeom.mjGEOM_BOX:
-            geom_id = gi
-            break
-
-    if geom_id is None:
-        raise ValueError(f"No box geom found on body: {body_name}")
+    geom_id = find_payload_constraint_geom(model, body_name)
+    geom_body_id = int(model.geom_bodyid[geom_id])
 
     half_extents = model.geom_size[geom_id].copy()
     geom_offset = model.geom_pos[geom_id].copy()
@@ -170,8 +199,8 @@ def _evaluate_payload_surface_points(
     for i in range(n_steps):
         data.qpos[:] = q_trajectory[i]
         mujoco.mj_kinematics(model, data)
-        body_pos = data.xpos[body_id]
-        body_rot = data.xmat[body_id].reshape(3, 3)
+        body_pos = data.xpos[geom_body_id]
+        body_rot = data.xmat[geom_body_id].reshape(3, 3)
         world_points[i] = (body_rot @ local_points.T).T + body_pos
 
     return world_points

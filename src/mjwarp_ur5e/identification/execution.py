@@ -76,8 +76,6 @@ class TrajectoryPlayback:
         data = self._data
         n_joints = trajectory.position.shape[1]
 
-        params = body_inertial_parameters_from_model(model, cfg.body_name)
-
         # Resolve the tool0 force/torque sensors. When both exist, the wrench is
         # read directly from the simulator's interaction force/torque (matching a
         # physical FT sensor) rather than computed from the regressor.
@@ -87,6 +85,14 @@ class TrajectoryPlayback:
         if use_ft_sensor:
             force_adr = int(model.sensor_adr[force_sid])
             torque_adr = int(model.sensor_adr[torque_sid])
+
+        # The analytic-fallback wrench needs the payload's rigid-body inertia.
+        # The FT-sensor path does not, so only resolve it when needed -- this lets
+        # the playback run against models (e.g. an articulated gripper) where
+        # cfg.body_name does not name a single rigid body.
+        params = None
+        if not use_ft_sensor:
+            params = body_inertial_parameters_from_model(model, cfg.body_name)
 
         buffer = DataBuffer()
         n_steps = len(trajectory.time)
@@ -129,11 +135,16 @@ class TrajectoryPlayback:
                 dq_meas = np.array(data.qvel[:n_joints], dtype=np.float64)
                 ddq_meas = np.array(data.qacc[:n_joints], dtype=np.float64)
             else:
-                # Open-loop mode: set state directly. mj_forward is needed so the
-                # FT sensor (an interaction force) gets populated.
+                # Open-loop mode: set state directly. The FT sensor reads the
+                # interaction force (cfrc_int), computed at the acceleration stage.
+                # mj_forward would overwrite qacc with the forward-dynamics solution
+                # before computing cfrc_int, so the sensor would measure the force for
+                # an arbitrary qacc instead of the commanded ddq_des. mj_inverse keeps
+                # the input qacc and still populates cfrc_int (via mj_rnePostConstraint),
+                # so the FT sensor reports the wrench corresponding to ddq_des.
                 set_model_state(model, data, q_des, dq_des, ddq_des)
                 if use_ft_sensor:
-                    mujoco.mj_forward(model, data)
+                    mujoco.mj_inverse(model, data)
                 q_meas = q_des.copy()
                 dq_meas = dq_des.copy()
                 ddq_meas = ddq_des.copy()
@@ -148,15 +159,14 @@ class TrajectoryPlayback:
                 ee_rot = np.eye(3, dtype=np.float64)
 
             if use_ft_sensor:
-                # MuJoCo FT sensor: force/torque in the site (tool0) frame,
-                # ordered [Fx, Fy, Fz, Mx, My, Mz]. The MuJoCo convention reports
-                # the constraint force the parent exerts on the child (the
-                # supporting reaction). Negate it so the recorded wrench is the
-                # load the payload exerts on the flange, matching a physical FT
-                # sensor (child -> parent).
+                # MuJoCo FT sensor: force/torque in the site frame. The regressor
+                # orders the wrench as [torque; force] and equals +cfrc_int
+                # (verified to match the analytic rigid-body wrench when the
+                # regressor is sampled about this site), so record [torque; force]
+                # without negation, matching the analytic-fallback ordering.
                 force = np.array(data.sensordata[force_adr : force_adr + 3], dtype=np.float64)
                 torque = np.array(data.sensordata[torque_adr : torque_adr + 3], dtype=np.float64)
-                wrench = -np.concatenate((force, torque))
+                wrench = np.concatenate((torque, force))
             else:
                 # Fallback: analytic rigid-body regressor wrench ([torque; force]).
                 reg_sample = sample_body_regressor(model, data, cfg.body_name)

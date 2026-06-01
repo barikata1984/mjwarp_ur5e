@@ -46,79 +46,69 @@ def set_model_state(
     mujoco.mj_fwdVelocity(model, data)
 
 
-def _body_acceleration_from_qacc(
+def _sample_site_kinematics(
     model: mujoco.MjModel,
     data: mujoco.MjData,
-    body_id: int,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Compute the qacc-dependent body acceleration via the body Jacobian.
+    body_name: str,
+    site_name: str,
+) -> BodyKinematics:
+    """Kinematics about a force/torque sensor site, consistent with cfrc_int.
 
-    MuJoCo's ``mj_objectAcceleration`` only returns the velocity-dependent
-    (centripetal / Coriolis) part of the body acceleration because ``data.cacc``
-    is not populated by the kinematic-only pipeline used in ``set_model_state``.
-    This helper computes the missing term ``J @ qacc`` in the world frame and
-    returns it rotated into the body frame.
-
-    Returns (angular_acceleration_body, linear_acceleration_body) from qacc.
+    Reading mj_objectVelocity/Acceleration on the SITE (rather than the body)
+    returns quantities in the site frame about the site origin -- the same frame
+    and reference point the FT sensor uses. cacc is populated via mj_inverse
+    (which preserves the commanded qacc), so mj_objectAcceleration returns the
+    full proper acceleration and no manual gravity term is needed.
     """
-    jacp = np.zeros((3, model.nv), dtype=np.float64)
-    jacr = np.zeros((3, model.nv), dtype=np.float64)
-    mujoco.mj_jacBody(model, data, jacp, jacr, body_id)
+    site_id = get_named_object_id(model, mujoco.mjtObj.mjOBJ_SITE, site_name)
+    if site_id is None:
+        raise ValueError(f"Unknown site name: {site_name}")
 
-    alpha_world = jacr @ data.qacc
-    a_world = jacp @ data.qacc
+    # Populate data.cacc while preserving the commanded qacc. mj_forward would
+    # overwrite qacc with the forward-dynamics solution; mj_inverse keeps it and
+    # fills cacc via mj_rnePostConstraint, so mj_objectAcceleration returns the
+    # full proper acceleration (gravity included).
+    mujoco.mj_inverse(model, data)
 
-    rotation = np.array(data.xmat[body_id], dtype=np.float64).reshape(3, 3)
-    return rotation.T @ alpha_world, rotation.T @ a_world
+    rotation = np.array(data.site_xmat[site_id], dtype=np.float64).reshape(3, 3)
+
+    velocity = np.zeros(6, dtype=np.float64)
+    mujoco.mj_objectVelocity(model, data, mujoco.mjtObj.mjOBJ_SITE, site_id, velocity, 1)
+    acceleration = np.zeros(6, dtype=np.float64)
+    mujoco.mj_objectAcceleration(model, data, mujoco.mjtObj.mjOBJ_SITE, site_id, acceleration, 1)
+
+    angular_velocity = velocity[:3]
+    linear_velocity = velocity[3:]
+    # mj_objectAcceleration returns the classical acceleration of the site origin;
+    # the Newton-Euler regressor expects the spatial acceleration, which differs by
+    # the transport term -omega x v.
+    linear_acceleration = acceleration[3:] - np.cross(angular_velocity, linear_velocity)
+
+    return BodyKinematics(
+        body_name=body_name,
+        rotation_body_to_world=rotation,
+        angular_velocity_body=angular_velocity,
+        linear_velocity_body=linear_velocity,
+        angular_acceleration_body=acceleration[:3],
+        linear_acceleration_body=linear_acceleration,
+        # cacc already includes gravity (proper acceleration), so no manual term.
+        gravity_body=np.zeros(3, dtype=np.float64),
+    )
 
 
 def sample_body_kinematics(
     model: mujoco.MjModel,
     data: mujoco.MjData,
     body_name: str,
+    site_name: str | None = None,
 ) -> BodyKinematics:
-    body_id = get_named_object_id(model, mujoco.mjtObj.mjOBJ_BODY, body_name)
-    if body_id is None:
-        raise ValueError(f"Unknown body name: {body_name}")
+    """Body kinematics about a force/torque sensor site.
 
-    rotation = np.array(data.xmat[body_id], dtype=np.float64).reshape(3, 3)
-
-    velocity_body = np.zeros(6, dtype=np.float64)
-    mujoco.mj_objectVelocity(
-        model,
-        data,
-        mujoco.mjtObj.mjOBJ_BODY,
-        body_id,
-        velocity_body,
-        1,
-    )
-
-    # mj_objectAcceleration returns only the velocity-dependent part
-    # (centripetal / Coriolis) because data.cacc is not populated by the
-    # kinematic-only pipeline.  We add the qacc-dependent part via J @ qacc.
-    accel_vel_body = np.zeros(6, dtype=np.float64)
-    mujoco.mj_objectAcceleration(
-        model,
-        data,
-        mujoco.mjtObj.mjOBJ_BODY,
-        body_id,
-        accel_vel_body,
-        1,
-    )
-    alpha_qacc_body, a_qacc_body = _body_acceleration_from_qacc(model, data, body_id)
-
-    gravity_world = np.array(model.opt.gravity, dtype=np.float64)
-    gravity_body = rotation.T @ gravity_world
-
-    return BodyKinematics(
-        body_name=body_name,
-        rotation_body_to_world=rotation,
-        angular_velocity_body=velocity_body[:3],
-        linear_velocity_body=velocity_body[3:],
-        angular_acceleration_body=accel_vel_body[:3] + alpha_qacc_body,
-        linear_acceleration_body=accel_vel_body[3:] + a_qacc_body,
-        gravity_body=gravity_body,
-    )
+    The regressor is always evaluated about the FT sensor site so it matches the
+    sensor's interaction force (cfrc_int). ``site_name`` defaults to ``ft_sensor``;
+    a model without that site raises ValueError (FT-less models are unsupported).
+    """
+    return _sample_site_kinematics(model, data, body_name, site_name or "ft_sensor")
 
 
 def trajectory_subsample_indices(num_samples: int, subsample_factor: int) -> range:

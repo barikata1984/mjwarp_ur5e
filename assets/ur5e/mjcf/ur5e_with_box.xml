@@ -37,6 +37,8 @@
     <material class="ur5e" name="linkgray" rgba="0.82 0.82 0.82 1"/>
     <material class="ur5e" name="urblue" rgba="0.49 0.678 0.8 1"/>
     <material name="payload_box_material" rgba="0.85 0.45 0.2 1" specular="0.3" shininess="0.2"/>
+    <material name="payload_red_material" rgba="0.85 0.2 0.2 1" specular="0.3" shininess="0.2"/>
+    <material name="payload_blue_material" rgba="0.2 0.35 0.85 1" specular="0.3" shininess="0.2"/>
     <material name="workspace_region_material" rgba="0.2 0.7 0.9 0.18" specular="0.1" shininess="0.1"/>
 
     <mesh file="base_0.obj"/>
@@ -119,8 +121,12 @@
                   <geom class="eef_collision" pos="0 0.08 0" quat="1 1 0 0" size="0.04 0.02"/>
                   <site name="attachment_site" pos="0 0.1 0" quat="-1 1 0 0"/>
                   <body name="payload_box_mount" pos="0 0.1 0" quat="-1 1 0 0">
-                    <inertial pos="0 -0.1 0.1" mass="0.927" diaginertia="0.0079181 0.0038625 0.0056007"/>
-                    <geom name="payload_box" type="box" pos="0 -0.1 0.1" size="0.05 0.125 0.1" material="payload_box_material" density="0"/>
+                    <body name="payload_blue_body" pos="0 0 0">
+                      <geom name="payload_box_blue" type="box" pos="0 0 0.075" size="0.05 0.05 0.075" material="payload_blue_material" density="200"/>
+                      <body name="payload_red_body" pos="0 0 0.15">
+                        <geom name="payload_box_red" type="box" pos="0 0 0.05" size="0.05 0.15 0.05" material="payload_red_material" density="200"/>
+                      </body>
+                    </body>
                     <site name="ft_sensor" pos="0 0 0" size="0.01"/>
                   </body>
                 </body>
@@ -147,6 +153,6 @@
   </sensor>
 
   <keyframe>
-    <key name="home" qpos="1.5707963267948966 -1.5708 1.5708 -1.5708 -1.5708 0" ctrl="1.5707963267948966 -1.5708 1.5708 -1.5708 -1.5708 0"/>
+    <key name="home" qpos="1.263214 -1.345398 1.351137 -1.576535 -1.570796 -1.570796" ctrl="1.263214 -1.345398 1.351137 -1.576535 -1.570796 -1.570796"/>
   </keyframe>
 </mujoco>

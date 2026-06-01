@@ -87,41 +87,118 @@ def sample_body_regressor(
     model: mujoco.MjModel,
     data: mujoco.MjData,
     body_name: str,
+    site_name: str | None = None,
 ) -> RegressorSample:
-    kinematics = sample_body_kinematics(model, data, body_name)
+    kinematics = sample_body_kinematics(model, data, body_name, site_name)
     regressor = rigid_body_wrench_regressor(kinematics)
     return RegressorSample(body_name=body_name, regressor=regressor, kinematics=kinematics)
+
+
+def _single_body_inertia_about_own_origin(
+    model: mujoco.MjModel,
+    body_id: int,
+) -> tuple[float, np.ndarray, np.ndarray]:
+    """Return (mass, com, inertia) of one body about its own frame origin."""
+    mass = float(model.body_mass[body_id])
+    com = np.array(model.body_ipos[body_id], dtype=np.float64)
+
+    inertia_diag = np.array(model.body_inertia[body_id], dtype=np.float64)
+    inertial_rotation = _quat_to_rotation_matrix(
+        np.array(model.body_iquat[body_id], dtype=np.float64)
+    )
+    inertia_com = inertial_rotation @ np.diag(inertia_diag) @ inertial_rotation.T
+
+    parallel_axis = mass * ((com @ com) * np.eye(3, dtype=np.float64) - np.outer(com, com))
+    inertia_origin = inertia_com + parallel_axis
+    return mass, com, inertia_origin
 
 
 def body_inertial_parameters_from_model(
     model: mujoco.MjModel,
     body_name: str,
 ) -> InertialParameters:
-    body_id = get_named_object_id(model, mujoco.mjtObj.mjOBJ_BODY, body_name)
-    if body_id is None:
+    """Combined inertial parameters of a body and all its descendants.
+
+    The assembly is rigidly attached (no joints between the named body and its
+    children), so all child masses are aggregated into the named body's frame,
+    expressed about that frame's origin. For a body with no children this reduces
+    to the single-body case.
+    """
+    root_id = get_named_object_id(model, mujoco.mjtObj.mjOBJ_BODY, body_name)
+    if root_id is None:
         raise ValueError(f"Unknown body name: {body_name}")
 
-    mass = float(model.body_mass[body_id])
-    com_body = np.array(model.body_ipos[body_id], dtype=np.float64)
-    first_moments = mass * com_body
+    # Collect the subtree rooted at root_id (root + all descendants).
+    subtree = [root_id]
+    for bid in range(model.nbody):
+        parent = bid
+        while parent != 0:
+            parent = int(model.body_parentid[parent])
+            if parent == root_id:
+                subtree.append(bid)
+                break
 
-    inertia_diag = np.array(model.body_inertia[body_id], dtype=np.float64)
-    inertia_com_inertial = np.diag(inertia_diag)
-    inertial_rotation = _quat_to_rotation_matrix(
-        np.array(model.body_iquat[body_id], dtype=np.float64)
-    )
-    inertia_com_body = inertial_rotation @ inertia_com_inertial @ inertial_rotation.T
+    total_mass = 0.0
+    total_first_moments = np.zeros(3, dtype=np.float64)
+    total_inertia = np.zeros((3, 3), dtype=np.float64)
 
-    parallel_axis = mass * (
-        (com_body @ com_body) * np.eye(3, dtype=np.float64) - np.outer(com_body, com_body)
-    )
-    inertia_origin_body = inertia_com_body + parallel_axis
+    for bid in subtree:
+        mass, com_local, inertia_local_origin = _single_body_inertia_about_own_origin(model, bid)
+        # Pose of body `bid` relative to the root frame.
+        rel_rot, rel_pos = _relative_pose(model, root_id, bid)
+
+        # COM and inertia of this body expressed in the root frame, about root origin.
+        com_root = rel_pos + rel_rot @ com_local
+        # Inertia about the body's own origin, rotated into root orientation.
+        inertia_about_body_origin_root = rel_rot @ inertia_local_origin @ rel_rot.T
+        # Shift reference point from body origin (at rel_pos in root frame) to root origin.
+        # I_root_origin = I_body_origin_in_root + m * (shift parallel-axis from body origin to root origin)
+        # Using first-moment form to stay valid for off-origin COM:
+        #   I about root origin = I about body origin (in root frame)
+        #     + m[(d·d)E - d⊗d] evaluated with d measured between the two reference
+        #       points, but the cleanest route is via the COM. Recompute about COM then shift.
+        # Inertia about this body's COM (frame-invariant under translation):
+        d_body = rel_rot @ com_local  # body origin -> COM, in root frame
+        inertia_about_com = inertia_about_body_origin_root - mass * (
+            (d_body @ d_body) * np.eye(3) - np.outer(d_body, d_body)
+        )
+        # Shift from COM to root origin:
+        inertia_about_root = inertia_about_com + mass * (
+            (com_root @ com_root) * np.eye(3) - np.outer(com_root, com_root)
+        )
+
+        total_mass += mass
+        total_first_moments += mass * com_root
+        total_inertia += inertia_about_root
 
     return InertialParameters(
-        mass=mass,
-        first_moments=first_moments,
-        inertia_matrix=inertia_origin_body,
+        mass=total_mass,
+        first_moments=total_first_moments,
+        inertia_matrix=total_inertia,
     )
+
+
+def _relative_pose(
+    model: mujoco.MjModel,
+    root_id: int,
+    body_id: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Pose (rotation, position) of `body_id` expressed in `root_id`'s frame.
+
+    Walks the kinematic tree from body_id up to root_id, composing the fixed
+    body_pos/body_quat transforms. Assumes body_id is in the subtree of root_id.
+    """
+    rot = np.eye(3, dtype=np.float64)
+    pos = np.zeros(3, dtype=np.float64)
+    bid = body_id
+    while bid != root_id:
+        local_rot = _quat_to_rotation_matrix(np.array(model.body_quat[bid], dtype=np.float64))
+        local_pos = np.array(model.body_pos[bid], dtype=np.float64)
+        # Compose: parent_T_body = local; accumulate child->root.
+        rot = local_rot @ rot
+        pos = local_pos + local_rot @ pos
+        bid = int(model.body_parentid[bid])
+    return rot, pos
 
 
 def compute_wrench_from_parameters(
@@ -147,6 +224,7 @@ def compute_stacked_body_regressor(
     body_name: str,
     subsample_factor: int = 1,
     with_ft_offset: bool = False,
+    site_name: str | None = None,
 ) -> np.ndarray:
     q_array = np.asarray(q, dtype=np.float64)
     dq_array = np.asarray(dq, dtype=np.float64)
@@ -162,7 +240,7 @@ def compute_stacked_body_regressor(
     rows: list[np.ndarray] = []
     for index in trajectory_subsample_indices(q_array.shape[0], subsample_factor):
         set_model_state(model, data, q_array[index], dq_array[index], ddq_array[index])
-        rows.append(sample_body_regressor(model, data, body_name).regressor)
+        rows.append(sample_body_regressor(model, data, body_name, site_name).regressor)
 
     stacked = np.vstack(rows)
 

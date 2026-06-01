@@ -131,6 +131,7 @@ def test_playback_and_estimation_pipeline() -> None:
         arrays["ddq"],
         BODY_NAME,
         subsample_factor=5,
+        site_name="ft_sensor",
     )
     wrench_stacked = arrays["wrench"][::5].reshape(-1)
 
