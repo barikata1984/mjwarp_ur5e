@@ -69,8 +69,8 @@
       <inertial mass="4.0" pos="0 0 0" diaginertia="0.00443333156 0.00443333156 0.0072"/>
       <geom mesh="base_0" material="black" class="visual"/>
       <geom mesh="base_1" material="jointgray" class="visual"/>
-      <body name="workspace_region" pos="0.05 0.6 0.275">
-        <geom name="workspace_region_geom" type="box" size="0.25 0.2 0.225" material="workspace_region_material"
+      <body name="workspace_region" pos="0 0.55 0.275">
+        <geom name="workspace_region_geom" type="box" size="0.2 0.2 0.225" material="workspace_region_material"
           contype="0" conaffinity="0" density="0"/>
       </body>
       <body name="shoulder_link" pos="0 0 0.163">
@@ -153,6 +153,6 @@
   </sensor>
 
   <keyframe>
-    <key name="home" qpos="1.263214 -1.345398 1.351137 -1.576535 -1.570796 -1.570796" ctrl="1.263214 -1.345398 1.351137 -1.576535 -1.570796 -1.570796"/>
+    <key name="home" qpos="1.324683 -1.472804 1.500770 -1.598762 -1.570796 -0.246091" ctrl="1.324683 -1.472804 1.500770 -1.598762 -1.570796 -0.246091"/>
   </keyframe>
 </mujoco>
