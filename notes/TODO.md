@@ -61,6 +61,8 @@
 - [x] 指全開保持 (actuator ctrl=0) で軌道追従 + FT 記録 (`playback_gripper.npz`)
 - [x] FT wrench プロット (`flange_wrench_gripper.png`) と再生動画 (`playback_gripper.mp4`)
 - [x] `execution.py` の単一剛体 `params` 解決を遅延化 (FT 経路で不在 body 名を許容)
+- [x] UR5e + FT300s + 2F-85 アセンブリモデル作成 (`ur5e_with_ft300s_and_gripper.xml`)
+- [x] FT センサ site を `gripper_mount` に配置 (FT300s 質量除外, 符号規約を XML コメントに明記)
 - [ ] グリッパサブツリー合成慣性の算出 (全開固定剛体としての同定真値)
 
 ## 最適化品質の改善 — feasible 解の獲得 (→ `docs/ISSUES.md`)

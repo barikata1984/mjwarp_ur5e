@@ -783,3 +783,30 @@ EE 速度スイープ (0.25/0.20/0.15/0.10, dq≤π/2, ddq≤2π) を作業領�
 UR5e ハード限界 3.14 rad/s 超) は削除し, 有効解のみ各条件サブディレクトリ (result.json/traj.json/grid.mp4) で
 保持. 削除: ddq 0.5π/1π (ddq cap 大違反), y0.30・xy0.20 の EE0.20/0.10 (破綻), `EE0.25_noDQ`
 (dq 9.43 rad/s, 限界の 3 倍 = 実機不可). 比較成果は `results/comparison/` に集約 (危険例の可視化として保持).
+
+## UR5e + FT300s + Robotiq 2F-85 アセンブリモデルの作成 (2026-06-09)
+
+UR5e フランジ → FT300s → Robotiq 2F-85 の 3 体直列構成を MJCF で構築.
+
+### 構成
+
+- `assets/ft300s/ft300s.stl`: FT300s メッシュ (mm 単位, scale 0.001). 直径 ~89 mm, 高さ 42.2 mm.
+- `assets/ur5e/mjcf/ur5e_with_ft300s_and_gripper.xml`: 本体モデル.
+- `assets/ur5e/mjcf/scene_with_ft300s_and_gripper.xml`: 4 カメラ (overview/top/front/side) 付きシーン.
+- `scripts/render_ft300s_assembly.py`: 2×2 グリッドプロット生成.
+- `ur5e_ft300s_2f85_assembly.png`: 出力画像.
+
+### STL フランジ方向
+
+STL の z=0 側がツールフランジ (グリッパ接続側), z=42.2 mm 側がロボットフランジ (UR5e 接続側).
+MJCF では `quat="0 1 0 0"` (x 軸まわり 180°) + `pos="0 0 0.0422"` で反転し, ロボット側を wrist_3 に向けている.
+
+### FT センサ配置と符号規約
+
+`ft_sensor` site は `gripper_mount` ボディ (FT300s 遠位フランジ, z=0.0422) に配置.
+`ft300s_mount` (z=0) ではなく `gripper_mount` に置くことで, FT300s ハウジング質量 (0.3 kg) を
+計測から除外. 実物の FT300s は内部の起歪体で計測するため, ハウジングのロボット側質量は計測に含まれない.
+
+- **MuJoCo 生値** (parent→child 支持力): 静止時 site frame Fz = −m_gripper × g ≈ −10.33 N
+- **実機 FT 規約** (child→parent 荷重力): 全 6 成分を符号反転 → Fz = +10.33 N
+- `execution.py` の FT パスは regressor 規約 (= MuJoCo 生値, 符号反転なし) で記録する設計.
