@@ -23,6 +23,8 @@ assets/ur5e/mjcf/*
 !assets/ur5e/mjcf/.gitkeep
 !assets/ur5e/mjcf/scene_with_box.xml
 !assets/ur5e/mjcf/ur5e_with_box.xml
+!assets/ur5e/mjcf/ur5e_with_ft300s_and_gripper.xml
+!assets/ur5e/mjcf/scene_with_ft300s_and_gripper.xml
 
 # Docker — machine-specific files (use .env.example as template)
 docker/.env
