@@ -68,6 +68,9 @@
 - [x] 4 視点グリッド動画出力 (Overview/Front/Top/Side)
 - [x] FT 比較プロット (sim vs real, 2x3 力/トルク分離)
 - [x] FTA でシムパイプライン検証 (ロジック問題なし, tool0 位置/速度がサブミリ精度で一致)
+- [x] ddq 計算を savgol (window=15) → 隣接二点差分に変更
+- [x] FT300s-wrist3 間の幾何ずれ調査 (ISO 9409 センタリングボス 3mm, FT300s 全高 37.5mm)
+- [x] ft300s_mount body 位置を 6mm tool0 側にシフト (嵌め合い構成の反映, pos y: 0.1→0.094)
 - [ ] グリッパサブツリー合成慣性の算出 (全開固定剛体としての同定真値)
 
 ## 最適化品質の改善 — feasible 解の獲得 (→ `docs/ISSUES.md`)
