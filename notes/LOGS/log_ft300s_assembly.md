@@ -96,3 +96,22 @@
 
 - Menagerie 配分, 総質量 0.907 kg スケール, アルミ cube 0.3375 kg
 - 出力: `results/replay/identification_result.json`, `identification_comparison.csv`
+
+### 実行手順
+
+```bash
+# 1. pinocchio インストール (初回のみ)
+pip install pin
+
+# 2. sim wrench 生成 (replay_ft.npz がない場合, MuJoCo + imageio 必要)
+python scripts/replay_trajectory_video.py
+
+# 3. sim vs real 慣性パラメータ同定
+python scripts/identify_from_sim.py
+
+# オプション
+#   --recording <path>    特定の recording.npz を指定 (デフォルト: data/ 配下の最新)
+#   --wrench <path>       別の replay_ft.npz を指定
+#   --gripper-cal <path>  別のグリッパー校正ファイル
+#   --method OLS+bias     比較手法 (OLS / TLS / OLS+bias / TLS+bias)
+```
