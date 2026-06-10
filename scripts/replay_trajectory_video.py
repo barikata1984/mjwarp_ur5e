@@ -305,6 +305,21 @@ def main() -> None:
 
     fig.tight_layout()
 
+    # Grey band behind kinematic rows (rows 2-4), computed after tight_layout
+    top_left = axes[2, 0].get_position()
+    bot_right = axes[4, 2].get_position()
+    pad = 0.008
+    fig.patches.append(
+        plt.Rectangle(
+            (top_left.x0 - pad, bot_right.y0 - pad),
+            bot_right.x1 - top_left.x0 + 2 * pad,
+            top_left.y1 - bot_right.y0 + 2 * pad,
+            transform=fig.transFigure,
+            facecolor="#e0e0e0",
+            zorder=-1,
+        )
+    )
+
     plot_path = out_dir / "ft_comparison.png"
     fig.savefig(plot_path, dpi=150, bbox_inches="tight")
     plt.close(fig)

@@ -13,6 +13,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import sys
 from pathlib import Path
@@ -177,6 +178,68 @@ def save_results(
     return out_path
 
 
+def save_comparison_csv(
+    result_sim: IdentificationResult,
+    result_real: IdentificationResult,
+    out_dir: Path,
+) -> Path:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "identification_comparison.csv"
+
+    sim_params = _params_dict(result_sim)
+    real_params = _params_dict(result_real)
+    param_units = [
+        "kg",
+        "kg·m",
+        "kg·m",
+        "kg·m",
+        "kg·m²",
+        "kg·m²",
+        "kg·m²",
+        "kg·m²",
+        "kg·m²",
+        "kg·m²",
+    ]
+    bias_labels = ["Fx", "Fy", "Fz", "Tx", "Ty", "Tz"]
+    bias_units = ["N", "N", "N", "Nm", "Nm", "Nm"]
+
+    with open(out_path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["", "", "Real", "", "", "", "Sim", "", "", ""])
+        w.writerow(["param", "unit"] + METHODS + METHODS)
+
+        w.writerow(["--- TOTAL ---"] + [""] * 9)
+        for i, name in enumerate(PARAM_NAMES):
+            row = [name, param_units[i]]
+            for m in METHODS:
+                row.append(real_params[m][i])
+            for m in METHODS:
+                row.append(sim_params[m][i])
+            w.writerow(row)
+
+        if result_real.object_params is not None and result_sim.object_params is not None:
+            w.writerow(["--- OBJECT ---"] + [""] * 9)
+            for i, name in enumerate(PARAM_NAMES):
+                row = [name, param_units[i]]
+                for m in METHODS:
+                    row.append(result_real.object_params.get(m, np.zeros(10))[i])
+                for m in METHODS:
+                    row.append(result_sim.object_params.get(m, np.zeros(10))[i])
+                w.writerow(row)
+
+        w.writerow(["--- BIAS ---"] + [""] * 9)
+        for i, bl in enumerate(bias_labels):
+            row = [bl, bias_units[i], "", ""]
+            row.append(result_real.bias_ols[i])
+            row.append(result_real.bias_tls[i])
+            row.extend(["", ""])
+            row.append(result_sim.bias_ols[i])
+            row.append(result_sim.bias_tls[i])
+            w.writerow(row)
+
+    return out_path
+
+
 def load_gripper_cal(path: Path) -> np.ndarray | None:
     if not path.exists():
         return None
@@ -278,7 +341,9 @@ def main() -> None:
 
     # --- Save ---
     out_path = save_results(result_sim, result_real, args.output_dir)
+    csv_path = save_comparison_csv(result_sim, result_real, args.output_dir)
     print(f"\nResults saved to: {out_path}")
+    print(f"Comparison CSV:   {csv_path}")
 
 
 if __name__ == "__main__":
