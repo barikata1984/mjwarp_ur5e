@@ -184,7 +184,7 @@
                          static Fz = -m_gripper * g  (site z points toward tool)
                        Real FT convention (child→parent, load on flange):
                          negate all 6 components → static Fz = +m_gripper * g  -->
-                  <body name="ft300s_mount" pos="0 0.1 0" quat="-1 1 0 0">
+                  <body name="ft300s_mount" pos="0 0.094 0" quat="-1 1 0 0">
                     <inertial mass="0.300" pos="0 0 0.0211"
                       diaginertia="0.000193 0.000193 0.000297"/>
                     <geom type="mesh" mesh="ft300s" material="ft300s_body" pos="0 0 0.0422" quat="0 1 0 0"

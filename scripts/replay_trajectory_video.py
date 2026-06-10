@@ -128,10 +128,9 @@ def _render_grid(
     return grid
 
 
-def _savgol_ddq(dq: np.ndarray, dt: float, window: int = 15, poly: int = 3) -> np.ndarray:
-    from scipy.signal import savgol_filter
-
-    return savgol_filter(dq, window_length=window, polyorder=poly, deriv=1, delta=dt, axis=0)
+def _numerical_ddq(dq: np.ndarray, dt: np.ndarray) -> np.ndarray:
+    ddq = np.diff(dq, axis=0) / dt[:, None]
+    return np.vstack([ddq, ddq[-1:]])
 
 
 def main() -> None:
@@ -147,9 +146,10 @@ def main() -> None:
     dq = d["joint_velocity"]
     wrench_actual = d["wrench"]
 
-    dt_median = float(np.median(np.diff(time_arr)))
-    ddq = _savgol_ddq(dq, dt_median)
+    dt = np.diff(time_arr)
+    ddq = _numerical_ddq(dq, dt)
 
+    dt_median = float(np.median(dt))
     print(f"Trajectory: {len(time_arr)} samples, {time_arr[-1]:.2f}s, dt={dt_median * 1000:.1f}ms")
 
     print("Loading model and closing gripper...")
