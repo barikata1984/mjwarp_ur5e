@@ -4,16 +4,27 @@ Outputs:
   1. 4-view grid video (overview, front, top, side) at 30 fps
   2. Simulated FT wrench via mj_inverse (saved to NPZ)
   3. Comparison plot: sim FT vs recorded wrench_actual
+
+Usage:
+    python scripts/replay_trajectory_video.py
+    python scripts/replay_trajectory_video.py --recording data/cube_.../recording.npz
+    python scripts/replay_trajectory_video.py --recording data/cube_.../recording.npz --output-dir results/cube
 """
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
+
+import sys
 
 import imageio
 import matplotlib.pyplot as plt
 import mujoco
 import numpy as np
+
+IPARAM_SRC = Path(__file__).resolve().parent.parent / "iparam_identification" / "src"
+sys.path.insert(0, str(IPARAM_SRC))
 
 CUBE_BODY_XML = """\
                           <body name="cube" pos="0 0 0.145">
@@ -85,16 +96,18 @@ def _compute_ft(
     dq: np.ndarray,
     ddq: np.ndarray,
     gripper_qpos: np.ndarray,
-) -> np.ndarray:
-    """Compute FT wrench for each timestep via mj_inverse."""
+) -> tuple[np.ndarray, np.ndarray]:
+    """Compute FT wrench and ft300s_mount position for each timestep via mj_inverse."""
     data = mujoco.MjData(model)
     fsid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SENSOR, "ft_force")
     tsid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SENSOR, "ft_torque")
     fadr = int(model.sensor_adr[fsid])
     tadr = int(model.sensor_adr[tsid])
+    ft_bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "ft300s_mount")
 
     n = len(q)
     wrench = np.zeros((n, 6))
+    ft_pos = np.zeros((n, 3))
     nv_gripper = len(gripper_qpos)
 
     for i in range(n):
@@ -107,8 +120,9 @@ def _compute_ft(
         f = data.sensordata[fadr : fadr + 3]
         t = data.sensordata[tadr : tadr + 3]
         wrench[i] = -np.concatenate((f, t))
+        ft_pos[i] = data.xpos[ft_bid].copy()
 
-    return wrench
+    return wrench, ft_pos
 
 
 def _render_grid(
@@ -133,9 +147,43 @@ def _numerical_ddq(dq: np.ndarray, dt: np.ndarray) -> np.ndarray:
     return np.vstack([ddq, ddq[-1:]])
 
 
+def _filtered_ddq(dq: np.ndarray, time_arr: np.ndarray, cutoff_freq: float = 10.0) -> np.ndarray:
+    """Compute ddq with the same low-pass filter as IdentificationPipeline."""
+    from utilities.numerical_differentiator import NumericalDifferentiator
+
+    diff = NumericalDifferentiator(cutoff_freq=cutoff_freq)
+    ddq = np.zeros_like(dq)
+    for i in range(len(dq)):
+        ddq[i] = diff.update(dq[i], time_arr[i])
+    return ddq
+
+
 def main() -> None:
-    npz_dir = sorted(Path("data").glob("replay_recording_*"))[-1]
-    npz_path = npz_dir / "recording.npz"
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--recording",
+        type=Path,
+        default=None,
+        help="Path to recording.npz (default: latest replay_recording_*)",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("results/replay"),
+        help="Directory for output files (default: results/replay)",
+    )
+    parser.add_argument(
+        "--filter-ddq",
+        action="store_true",
+        help="Use pipeline-consistent low-pass filtered ddq instead of raw forward diff",
+    )
+    cli_args = parser.parse_args()
+
+    if cli_args.recording is not None:
+        npz_path = cli_args.recording
+    else:
+        npz_dir = sorted(Path("data").glob("replay_recording_*"))[-1]
+        npz_path = npz_dir / "recording.npz"
     scene_xml = "assets/ur5e/mjcf/scene_with_ft300s_and_gripper.xml"
 
     print(f"Loading trajectory data from {npz_path}...")
@@ -147,7 +195,11 @@ def main() -> None:
     wrench_actual = d["wrench"]
 
     dt = np.diff(time_arr)
-    ddq = _numerical_ddq(dq, dt)
+    if cli_args.filter_ddq:
+        ddq = _filtered_ddq(dq, time_arr)
+        print("Using pipeline-consistent filtered ddq (10 Hz LPF)")
+    else:
+        ddq = _numerical_ddq(dq, dt)
 
     dt_median = float(np.median(dt))
     print(f"Trajectory: {len(time_arr)} samples, {time_arr[-1]:.2f}s, dt={dt_median * 1000:.1f}ms")
@@ -158,11 +210,11 @@ def main() -> None:
     gripper_qpos = _close_gripper(model, data)
 
     print("Computing sim FT via mj_inverse...")
-    wrench_sim = _compute_ft(model, q, dq, ddq, gripper_qpos)
+    wrench_sim, ft_pos_sim = _compute_ft(model, q, dq, ddq, gripper_qpos)
     wrench_sim_tared = wrench_sim - wrench_sim[0]
     wrench_actual_tared = wrench_actual - wrench_actual[0]
 
-    out_dir = Path("results/replay")
+    out_dir = cli_args.output_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     np.savez(
         out_dir / "replay_ft.npz",
@@ -205,52 +257,58 @@ def main() -> None:
     renderer.close()
     print(f"Saved video to {video_path}")
 
-    print("Generating FT comparison plot...")
+    # --- Kinematics at ft300s_mount ---
+    tip_pos_real = d["tip_position"]
+    tip_vel_real = d["tip_velocity_jacobian"]
+    tip_acc_real = d["tip_acceleration_numerical"]
+
+    ft_vel_sim = np.zeros_like(ft_pos_sim)
+    ft_vel_sim[1:] = np.diff(ft_pos_sim, axis=0) / dt[:, None]
+    ft_acc_sim = np.zeros_like(ft_pos_sim)
+    ft_acc_sim[1:] = np.diff(ft_vel_sim, axis=0) / dt[:, None]
+
+    print("Generating 5x3 comparison plot...")
     force_labels = ["Fx", "Fy", "Fz"]
     torque_labels = ["Mx", "My", "Mz"]
-    fig, axes = plt.subplots(2, 3, figsize=(16, 8), sharex=True)
-    fig.suptitle(
-        "FT Comparison: Sim (grasping scene) vs Real",
-        fontsize=14,
-        fontweight="bold",
-    )
+    xyz_labels = ["X", "Y", "Z"]
+    fig, axes = plt.subplots(5, 3, figsize=(16, 20), sharex=True)
+    fig.suptitle("Sim vs Real Comparison", fontsize=14, fontweight="bold")
+
+    def _plot_row(
+        row: int,
+        sim_data: np.ndarray,
+        real_data: np.ndarray,
+        labels: list[str],
+        ylabel: str,
+    ) -> None:
+        all_vals = np.concatenate([sim_data.ravel(), real_data.ravel()])
+        margin = (np.nanmax(all_vals) - np.nanmin(all_vals)) * 0.05
+        ylim = (np.nanmin(all_vals) - margin, np.nanmax(all_vals) + margin)
+        for col in range(3):
+            ax = axes[row, col]
+            ax.plot(time_arr, real_data[:, col], label="Real", alpha=0.8, linewidth=0.8)
+            ax.plot(time_arr, sim_data[:, col], label="Sim", alpha=0.8, linewidth=0.8)
+            ax.set_title(labels[col], fontsize=12)
+            ax.legend(fontsize=8)
+            ax.grid(True, alpha=0.3)
+            ax.set_ylim(ylim)
+        axes[row, 0].set_ylabel(ylabel)
+
+    _plot_row(0, wrench_sim_tared[:, :3], wrench_actual_tared[:, :3], force_labels, "Force [N]")
+    _plot_row(1, wrench_sim_tared[:, 3:], wrench_actual_tared[:, 3:], torque_labels, "Torque [Nm]")
+    _plot_row(2, ft_pos_sim, tip_pos_real, xyz_labels, "Position [m]")
+    _plot_row(3, ft_vel_sim, tip_vel_real, xyz_labels, "Velocity [m/s]")
+    _plot_row(4, ft_acc_sim, tip_acc_real, xyz_labels, "Accel [m/s²]")
 
     for col in range(3):
-        ax_f = axes[0, col]
-        ax_f.plot(time_arr, wrench_actual_tared[:, col], label="Real", alpha=0.8, linewidth=0.8)
-        ax_f.plot(time_arr, wrench_sim_tared[:, col], label="Sim", alpha=0.8, linewidth=0.8)
-        ax_f.set_title(force_labels[col], fontsize=12)
-        ax_f.legend(fontsize=8)
-        ax_f.grid(True, alpha=0.3)
-
-        ax_t = axes[1, col]
-        ax_t.plot(time_arr, wrench_actual_tared[:, col + 3], label="Real", alpha=0.8, linewidth=0.8)
-        ax_t.plot(time_arr, wrench_sim_tared[:, col + 3], label="Sim", alpha=0.8, linewidth=0.8)
-        ax_t.set_title(torque_labels[col], fontsize=12)
-        ax_t.legend(fontsize=8)
-        ax_t.grid(True, alpha=0.3)
-        ax_t.set_xlabel("Time [s]")
-
-    f_all = np.concatenate([wrench_actual_tared[:, :3].ravel(), wrench_sim_tared[:, :3].ravel()])
-    f_margin = (np.nanmax(f_all) - np.nanmin(f_all)) * 0.05
-    f_ylim = (np.nanmin(f_all) - f_margin, np.nanmax(f_all) + f_margin)
-    for ax in axes[0]:
-        ax.set_ylim(f_ylim)
-    axes[0, 0].set_ylabel("Force [N]")
-
-    t_all = np.concatenate([wrench_actual_tared[:, 3:].ravel(), wrench_sim_tared[:, 3:].ravel()])
-    t_margin = (np.nanmax(t_all) - np.nanmin(t_all)) * 0.05
-    t_ylim = (np.nanmin(t_all) - t_margin, np.nanmax(t_all) + t_margin)
-    for ax in axes[1]:
-        ax.set_ylim(t_ylim)
-    axes[1, 0].set_ylabel("Torque [Nm]")
+        axes[4, col].set_xlabel("Time [s]")
 
     fig.tight_layout()
 
     plot_path = out_dir / "ft_comparison.png"
     fig.savefig(plot_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print(f"Saved FT comparison plot to {plot_path}")
+    print(f"Saved comparison plot to {plot_path}")
 
 
 if __name__ == "__main__":
