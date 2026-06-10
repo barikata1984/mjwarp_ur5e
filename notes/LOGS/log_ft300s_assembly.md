@@ -97,6 +97,36 @@
 - Menagerie 配分, 総質量 0.907 kg スケール, アルミ cube 0.3375 kg
 - 出力: `results/replay/identification_result.json`, `identification_comparison.csv`
 
+## 2026-06-10: cube/pan データ対応 + FTA (sim-real 乖離の原因分析 第 2 ラウンド)
+
+### replay_trajectory_video.py の拡張
+
+- `--recording`, `--output-dir`, `--filter-ddq` CLI 引数を追加
+- `--filter-ddq`: pipeline と同じ 10 Hz LPF で ddq を計算するオプション (NumericalDifferentiator 再利用)
+- `_compute_ft()` が ft300s_mount 位置も返すよう拡張
+- 比較プロットを 2x3 → 5x3 に拡張 (力/トルク/並進位置/速度/加速度)
+- カメラアングルを `scene_with_box.xml` の payload_overview/view_x/view_y/view_z に統一
+- side カメラを反対側 (-X) から撮影するよう変更
+
+### cube データでの sim 同定実行
+
+- 入力: `data/cube_2026-06-10_06-35-32/recording.npz`
+- 出力: `results/cube/` (replay_ft.npz, replay_4view.mp4, ft_comparison.png, identification_result.json)
+- OLS+bias 物体慣性比較 (sim vs real): 質量 +25.8%, hz +5.2%, Iyy +207%, Izz -144%
+
+### FTA: sim-real 乖離の原因分析
+
+- **Top event**: cube の OLS+bias 差分法で物体慣性パラメータに大きな乖離
+- **排除した仮説**:
+  1. ddq フィルタ不整合 (H1): pipeline は 10 Hz LPF, replay は raw forward diff. diff RMS は filtered の 50–68%. しかし filtered ddq で再実行しても結果ほぼ不変 → 主因ではない
+  2. wrench taring 不整合 (H2): 両方 frame0-tared, sim[0]=[0,...,0], real[0] は identify 側で引く → 整合
+- **確認された構造的問題** (H: MJCF vs URDF モデル不一致):
+  - MJCF: ft300s_mount 0.3 kg あり, ft300_sensor なし, gripper_base 0.777 kg, 合計 ~1.195 kg
+  - URDF: ft300s_mount なし, ft300_sensor 0.442 kg あり, gripper_base 0.788 kg, 合計 ~1.352 kg
+  - gripper_base CoM Z: MJCF 0.0355 vs URDF 0.0315 m (4 mm 差)
+  - FT300s 分はキャリブレーション済みだが, グリッパー部分の差が残存
+- **次のステップ**: Pinocchio RNEA で URDF から直接レンチ生成 → pipeline self-consistency テスト
+
 ### 実行手順
 
 ```bash

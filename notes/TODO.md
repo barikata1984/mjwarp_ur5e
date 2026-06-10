@@ -66,7 +66,7 @@
 - [x] グリッパで 5cm 立方体をグリップした状態のレンダリング (`scene_grasping.xml`, `render_grasping.py`)
 - [x] 実機録画の関節軌道リプレイ + `mj_inverse` FT 計測パイプライン (`replay_trajectory_video.py`)
 - [x] 4 視点グリッド動画出力 (Overview/Front/Top/Side)
-- [x] FT 比較プロット (sim vs real, 2x3 力/トルク分離)
+- [x] FT 比較プロット (sim vs real, 5x3: 力/トルク/位置/速度/加速度)
 - [x] FTA でシムパイプライン検証 (ロジック問題なし, tool0 位置/速度がサブミリ精度で一致)
 - [x] ddq 計算を savgol (window=15) → 隣接二点差分に変更
 - [x] FT300s-wrist3 間の幾何ずれ調査 (ISO 9409 センタリングボス 3mm, FT300s 全高 37.5mm)
@@ -75,7 +75,8 @@
 - [x] シミュレーション慣性パラメータ同定パイプライン構築 (`scripts/identify_from_sim.py`)
 - [x] cube 質量をアルミ密度に設定 (0.3375 kg)
 - [x] グリッパー質量を実機校正値 (0.907 kg) にスケーリング
-- [ ] Iyy 等の慣性モーメント sim-real 乖離の改善 (グリッパーモデル質量配置の精緻化)
+- [ ] Iyy 等の慣性モーメント sim-real 乖離の改善 (MJCF/URDF モデル不一致が主因, Pinocchio self-consistency テスト未実施)
+- [ ] MuJoCo vs Pinocchio self-consistency テスト (URDF RNEA でレンチ生成 → pipeline 同定で真値復元を確認)
 
 ## 最適化品質の改善 — feasible 解の獲得 (→ `docs/ISSUES.md`)
 

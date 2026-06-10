@@ -29,12 +29,17 @@
 - PD playback の追従誤差は max_pos_err≈0.097 rad (≈5.5°)
 - 質量・重心は誤差 0% で復元できたが, 追従誤差が慣性推定や実機 sim-real ギャップにどう効くか未評価
 
-## 慣性パラメータ同定 Iyy の sim-real 乖離
+## 慣性パラメータ同定の sim-real 乖離 (MJCF/URDF モデル不一致)
 
-- Menagerie 配分 + 総質量 0.907 kg スケール + アルミ cube 0.3375 kg の条件で, OLS+bias total Iyy が sim -0.023 vs real -0.010 (+129%)
-- 質量配分の変更 (automaticaddison 比率) では改善せず悪化
-- グリッパーモデルのボディ重心位置 (`body_pos`, `body_ipos`) が実物と異なる可能性
-- ケーブル・配線等モデルに含まれない質量の寄与も考えられる
+- cube データで OLS+bias 物体慣性: 質量 +25.8%, Iyy +207%, Izz -144%
+- FTA で排除した仮説:
+  - ddq フィルタ不整合 (pipeline 10 Hz LPF vs replay raw forward diff): filtered ddq で再実行しても変化なし
+  - wrench taring 不整合: 両方 frame0-tared で整合
+- 確認された構造的問題: MJCF (MuJoCo) と URDF (Pinocchio) で FT センサ以降のボディ構成が異なる
+  - MJCF 合計 ~1.195 kg vs URDF 合計 ~1.352 kg (FT300s の扱いが異なる)
+  - グリッパーベース CoM Z: MJCF 0.0355 vs URDF 0.0315 (4 mm 差)
+- FT300s 分はキャリブレーション済みで差分法で相殺されるが, グリッパー部分の差が残存
+- 次のステップ: Pinocchio RNEA で URDF から直接レンチ生成 → pipeline self-consistency テスト
 
 ## FT sim-real 比較で Fx/Fy/Mx/My のスケール不一致
 
