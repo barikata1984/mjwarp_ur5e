@@ -29,6 +29,13 @@
 - PD playback の追従誤差は max_pos_err≈0.097 rad (≈5.5°)
 - 質量・重心は誤差 0% で復元できたが, 追従誤差が慣性推定や実機 sim-real ギャップにどう効くか未評価
 
+## 慣性パラメータ同定 Iyy の sim-real 乖離
+
+- Menagerie 配分 + 総質量 0.907 kg スケール + アルミ cube 0.3375 kg の条件で, OLS+bias total Iyy が sim -0.023 vs real -0.010 (+129%)
+- 質量配分の変更 (automaticaddison 比率) では改善せず悪化
+- グリッパーモデルのボディ重心位置 (`body_pos`, `body_ipos`) が実物と異なる可能性
+- ケーブル・配線等モデルに含まれない質量の寄与も考えられる
+
 ## FT sim-real 比較で Fx/Fy/Mx/My のスケール不一致
 
 - 隣接二点差分 ddq + ft300s_mount 6mm シフト後: Fz 0.97, Fx 1.26, Fy 1.67, Mx 1.94, My 1.63

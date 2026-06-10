@@ -54,3 +54,45 @@
 - 嵌め合い構成 (センタリングボス 3mm + アダプタ嵌入) を反映
 - FT 比較: 6mm シフト後も ratio にほぼ変化なし → センサ位置は FT ずれの支配要因ではない
 - 最終 ratio: Fz 0.97, Fx 1.26, Fy 1.67, Mx 1.94, My 1.63
+
+## 2026-06-10: シミュレーション慣性パラメータ同定パイプライン構築
+
+### パイプライン
+
+- `scripts/identify_from_sim.py` を新規作成
+- `IdentificationPipeline` (ROS 非依存) を Pinocchio + URDF (`ur5e_ft300s_robotiq85.urdf`) で駆動
+- 入力: `recording.npz` (実機関節軌道) + `replay_ft.npz` (MuJoCo `mj_inverse` wrench)
+- sim / real 両方の同定を実行し, 比較テーブルと JSON/CSV を `results/replay/` に出力
+- gripper 校正 (`gripper.json`) による差分法 (object inertia) にも対応
+
+### FTA: sim vs real 慣性パラメータ乖離の原因分析
+
+- **Top event**: sim 同定結果が real と系統的に乖離 (m -10%, hz -34% with 0.1 kg cube)
+- **根本原因**:
+  1. MuJoCo cube 0.1 kg が実物より軽い
+  2. 実機 gripper_cal (0.907 kg) と MuJoCo グリッパー質量 (1.053 kg) の不一致 — 差分法で object 側にズレが乗る
+
+### cube 質量をアルミ密度に変更
+
+- 5 cm 角, 密度 2700 kg/m³ → 0.3375 kg, diaginertia 1.40625e-4 kg·m²
+- `replay_trajectory_video.py` の `CUBE_BODY_XML` を更新
+- 結果 (OLS+bias total): m 差 -10.1% → +7.9%, hz 差 -33.9% → +3.3% に改善
+
+### グリッパー質量スケーリング
+
+- Menagerie 配分を維持し, 全ボディを比率 0.907/1.053 = 0.862 でスケール
+- 結果 (OLS+bias total): m 差 -3.5%, hz 差 -3.7% (良好)
+- Iyy は +129% で乖離残存 — モデルの質量配置 (重心位置) の限界
+
+### グリッパー質量配分の代替ソース調査
+
+- Robotiq 公式: 925 g (カップリング込み) / 900 g (なし), CoM/慣性は画像のみ
+- MuJoCo Menagerie: 0.900 kg, CAD 由来 (現モデルと同一)
+- automaticaddison URDF: 0.921 kg, base 0.663 kg / fingers 0.258 kg (Menagerie は 0.777 / 0.125)
+- automaticaddison 比率で再スケール → Iyy 悪化 (+151%), 改善せず
+- **結論**: Menagerie 配分 + 総質量スケーリングが現状ベスト
+
+### 最終設定
+
+- Menagerie 配分, 総質量 0.907 kg スケール, アルミ cube 0.3375 kg
+- 出力: `results/replay/identification_result.json`, `identification_comparison.csv`
