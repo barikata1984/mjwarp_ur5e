@@ -17,8 +17,8 @@ import numpy as np
 
 CUBE_BODY_XML = """\
                           <body name="cube" pos="0 0 0.145">
-                            <inertial mass="0.1" pos="0 0 0"
-                              diaginertia="4.17e-05 4.17e-05 4.17e-05"/>
+                            <inertial mass="0.3375" pos="0 0 0"
+                              diaginertia="1.40625e-04 1.40625e-04 1.40625e-04"/>
                             <geom name="cube_geom" type="box" size="0.025 0.025 0.025"
                               rgba="0.85 0.32 0.1 1" friction="1.0 0.005 0.001"/>
                           </body>
