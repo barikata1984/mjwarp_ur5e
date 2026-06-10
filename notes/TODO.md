@@ -63,6 +63,11 @@
 - [x] `execution.py` の単一剛体 `params` 解決を遅延化 (FT 経路で不在 body 名を許容)
 - [x] UR5e + FT300s + 2F-85 アセンブリモデル作成 (`ur5e_with_ft300s_and_gripper.xml`)
 - [x] FT センサ site を `gripper_mount` に配置 (FT300s 質量除外, 符号規約を XML コメントに明記)
+- [x] グリッパで 5cm 立方体をグリップした状態のレンダリング (`scene_grasping.xml`, `render_grasping.py`)
+- [x] 実機録画の関節軌道リプレイ + `mj_inverse` FT 計測パイプライン (`replay_trajectory_video.py`)
+- [x] 4 視点グリッド動画出力 (Overview/Front/Top/Side)
+- [x] FT 比較プロット (sim vs real, 2x3 力/トルク分離)
+- [x] FTA でシムパイプライン検証 (ロジック問題なし, tool0 位置/速度がサブミリ精度で一致)
 - [ ] グリッパサブツリー合成慣性の算出 (全開固定剛体としての同定真値)
 
 ## 最適化品質の改善 — feasible 解の獲得 (→ `docs/ISSUES.md`)

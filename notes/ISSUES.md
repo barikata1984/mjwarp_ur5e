@@ -28,3 +28,10 @@
 
 - PD playback の追従誤差は max_pos_err≈0.097 rad (≈5.5°)
 - 質量・重心は誤差 0% で復元できたが, 追従誤差が慣性推定や実機 sim-real ギャップにどう効くか未評価
+
+## FT sim-real 比較で Fx/Fy/Mx/My のスケール不一致
+
+- `mj_inverse` による FT 計算は Fz では span 比 1.03 だが, Fx 1.37, Fy 1.72, Mx 2.00, My 1.78
+- tool0 位置・速度はサブミリ精度で一致 → パイプラインロジックの問題ではない
+- 残存要因: (1) ddq の savgol 平滑化 (window=15, 179ms) がピーク加速度を 65–85% に抑制, (2) sim payload 質量パラメータ差 (cube 0.1 kg 含む vs 実機)
+- 対策候補: savgol window 縮小, 実機ペイロード質量の正確な反映
