@@ -5,6 +5,7 @@ from .fourier_warp import (
     fourier_trajectory_warp,
     windowed_fourier_trajectory_warp,
 )
+from .quintic_spline import QuinticSplineConfig, QuinticSplineTrajectory
 from .window import WindowTrajectory, WindowTrajectoryConfig
 from .windowed_fourier import WindowedFourierTrajectory, WindowedFourierTrajectoryConfig
 
@@ -14,6 +15,8 @@ __all__ = [
     "FourierTrajectory",
     "FourierTrajectoryConfig",
     "HAS_WARP",
+    "QuinticSplineConfig",
+    "QuinticSplineTrajectory",
     "TrajectorySample",
     "WindowTrajectory",
     "WindowTrajectoryConfig",
