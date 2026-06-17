@@ -41,6 +41,13 @@
 - FT300s 分はキャリブレーション済みで差分法で相殺されるが, グリッパー部分の差が残存
 - 次のステップ: Pinocchio RNEA で URDF から直接レンチ生成 → pipeline self-consistency テスト
 
+## MPC 励起プランナーに衝突・作業域制約が未接続
+
+- `ExcitationPlanner` (`identification/mpc/planner.py`) に衝突制約・作業域制約が組み込まれていない
+- 実行時にロボットがテーブルを貫通し, 危険な姿勢に到達するケースを確認
+- 既存インフラは流用可能: `WorkspaceConstraintConfig`, `CollisionConfig`, `make_collision_constraint`, `make_workspace_constraint` (`optimizer.py` / `constraints.py`)
+- これらを `ExcitationPlanner._build_constraints()` に追加することで対処できる
+
 ## FT sim-real 比較で Fx/Fy/Mx/My のスケール不一致
 
 - 隣接二点差分 ddq + ft300s_mount 6mm シフト後: Fz 0.97, Fx 1.26, Fy 1.67, Mx 1.94, My 1.63
