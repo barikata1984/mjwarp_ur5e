@@ -155,3 +155,36 @@ class RenderPlaybackConfig(ResultInputConfig):
     grid_cameras: tuple[str, ...] = ("", "view_x", "view_y", "view_z")
     save_frames: bool = False
     frames_dir: str = "results/frames"
+
+
+# ---------------------------------------------------------------------------
+# MPC identification config
+# ---------------------------------------------------------------------------
+
+
+@dataclass(slots=True)
+class MPCIdentificationConfig(ModelConfig):
+    """Config for MPC identification demo."""
+
+    # Horizon
+    horizon_duration: float = 3.0
+    num_segments: int = 4
+    fps: float = 100.0
+    subsample_factor: int = 10
+    # Planner
+    n_restarts: int = 8
+    max_iter: int = 100
+    seed: int = 42
+    waypoint_perturbation: float = 0.3
+    # MPC loop
+    replan_period: float = 1.5
+    max_mpc_steps: int = 10
+    convergence_threshold: float = 0.01
+    # Robot
+    body_name: str = "payload_box_mount"
+    site_name: str = "attachment_site"
+    # Execution
+    use_pd_control: bool = False
+    noise_std_wrench: float = 0.0
+    # Output
+    output: str = "results/mpc_identification_result.json"
